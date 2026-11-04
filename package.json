@@ -11,13 +11,14 @@
     "schema": "node scripts/write-schema.mjs",
     "seed:demo": "node --env-file=.env.local scripts/seed-demo.mjs",
     "seed:content": "node scripts/seed-content.mjs",
-    "warm:cache": "node scripts/warm-cache.mjs"
+    "warm:cache": "node scripts/warm-cache.mjs",
+    "check:sql": "node --conditions=react-server scripts/_shim-check.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
     "lucide-react": "^1.52.0",
+    "mysql2": "^3.24.6",
     "next": "16.4.0",
-    "postgres": "^3.4.9",
     "qrcode": "^1.5.4",
     "qrcode.react": "^4.2.0",
     "react": "19.3.0",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "postgres": "^3.4.9",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

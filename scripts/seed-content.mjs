@@ -6,22 +6,17 @@
 // Safe to run more than once.
 //
 //   npm run seed:content
-import postgres from "postgres";
 import { AwsClient } from "aws4fetch";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { applySchema, connect, readEnvFile } from "./_db.mjs";
 
-const unquote = (v) => v.trim().replace(/^"(.*)"$/, "$1").replace(/^'(.*)'$/, "$1");
 const env = {
-  ...Object.fromEntries(
-    readFileSync(new URL("../.env.local", import.meta.url), "utf8")
-      .split("\n")
-      .filter((l) => /^[A-Z_][A-Z0-9_]*=/.test(l))
-      .map((l) => [l.slice(0, l.indexOf("=")), unquote(l.slice(l.indexOf("=") + 1))]),
-  ),
+  ...readEnvFile(new URL("../.env.local", import.meta.url)),
+  ...readEnvFile(new URL("../.env", import.meta.url)),
   ...process.env,
 };
-const sql = postgres(env.DATABASE_URL, { max: 2, onnotice: () => {} });
+const sql = await connect(env);
 const s3 = new AwsClient({ accessKeyId: env.OBJECT_STORAGE_ACCESS_KEY, secretAccessKey: env.OBJECT_STORAGE_SECRET_KEY, service: "s3", region: env.OBJECT_STORAGE_REGION || "us-east-1" });
 const bucketUrl = `${env.OBJECT_STORAGE_ENDPOINT.replace(/\/$/, "")}/${env.OBJECT_STORAGE_BUCKET}`;
 const prefix = (env.OBJECT_STORAGE_BASE_PREFIX ?? "").replace(/^\/|\/$/g, "");
@@ -40,17 +35,11 @@ async function put(key, bytes, mime) {
   }
 }
 
-// Bring the schema up to date first (same SQL the app runs on start-up)
+// Bring the schema up to date first (the same SQL the app runs on start-up). MySQL DDL is not
+// transactional, so the statements run outside a transaction — each is idempotent on its own.
 {
-  const schemaSrc = readFileSync(new URL("../src/lib/schema.ts", import.meta.url), "utf8");
-  const SCHEMA = schemaSrc.slice(schemaSrc.indexOf("`") + 1, schemaSrc.lastIndexOf("`"));
-  const VERSION = Number(/SCHEMA_VERSION = (\d+)/.exec(schemaSrc)[1]);
-  await sql`CREATE TABLE IF NOT EXISTS schema_meta (id INT PRIMARY KEY, version INT NOT NULL)`;
-  await sql.begin(async (tx) => {
-    await tx.unsafe(SCHEMA);
-    await tx`INSERT INTO schema_meta (id, version) VALUES (1, ${VERSION}) ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version`;
-  });
-  console.log(`schema ready (version ${VERSION})`);
+  const version = await applySchema(sql, new URL("../src/lib/schema.ts", import.meta.url));
+  console.log(`schema ready (version ${version})`);
 }
 
 /** Width and height of a JPEG, from its SOF marker. */
@@ -109,9 +98,8 @@ for (const { slot, alt, seed } of slots) {
   await put(thumbKey, thumb.bytes, "image/jpeg");
   log(`${slot}: saving record`);
   await sql`
-    INSERT INTO site_images (slot, storage_key, thumb_key, mime, width, height, alt)
-    VALUES (${slot}, ${fullKey}, ${thumbKey}, 'image/jpeg', ${full.width}, ${full.height}, ${alt})
-    ON CONFLICT (slot) DO NOTHING`;
+    INSERT IGNORE INTO site_images (slot, storage_key, thumb_key, mime, width, height, alt)
+    VALUES (${slot}, ${fullKey}, ${thumbKey}, 'image/jpeg', ${full.width}, ${full.height}, ${alt})`;
   added++;
   console.log(`image  ${slot}`);
 }
@@ -217,8 +205,8 @@ Every driver partner gets a personal QR code. New phones that download NepCab th
   },
 ];
 
-const [{ n: blogCount }] = await sql`SELECT count(*)::int AS n FROM posts WHERE kind = 'blog'`;
-if (blogCount > 0) {
+const [{ n: blogCount }] = await sql`SELECT count(*) AS n FROM posts WHERE kind = 'blog'`;
+if (Number(blogCount) > 0) {
   console.log(`blog: ${blogCount} posts already there, starter guides not added`);
 } else {
   // Oldest first, so the first guide ends up newest
@@ -232,12 +220,13 @@ if (blogCount > 0) {
     await put(thumbKey, thumb.bytes, "image/jpeg");
     await sql.begin(async (tx) => {
       await tx`
-        INSERT INTO photos (id, album, caption, mime, storage_key, thumb_key, width, height, sort)
+        INSERT INTO photos (id, album, caption, mime, storage_key, thumb_key, width, height, \`sort\`)
         VALUES (${photoId}, 'news', '', 'image/jpeg', ${fullKey}, ${thumbKey}, ${full.width}, ${full.height}, 0)`;
+      // posts.id has no default in MySQL (Postgres used gen_random_uuid()), so it is set here.
       await tx`
-        INSERT INTO posts (slug, kind, title, excerpt, body, cover_id, published, published_at, topic)
-        VALUES (${g.slug}, 'blog', ${g.title}, ${g.excerpt}, ${g.body}, ${photoId}, true, now() - ${`${i} minutes`}::interval, ${g.topic})
-        ON CONFLICT (slug) DO NOTHING`;
+        INSERT IGNORE INTO posts (id, slug, kind, title, excerpt, body, cover_id, published, published_at, topic)
+        VALUES (${randomUUID()}, ${g.slug}, 'blog', ${g.title}, ${g.excerpt}, ${g.body}, ${photoId}, 1,
+                UTC_TIMESTAMP() - INTERVAL ${i} MINUTE, ${g.topic})`;
     });
     console.log(`blog   ${g.slug}`);
   }

@@ -58,7 +58,7 @@ async function Dashboard() {
     return (
       <Card>
         <EmptyState icon={Database} title="Can’t reach the database">
-          Check that <code className="rounded bg-ink/5 px-1">DATABASE_URL</code> is set in the server environment and restart the app.
+          Check that the <code className="rounded bg-ink/5 px-1">MYSQL_*</code> settings are set in the server environment and restart the app.
         </EmptyState>
       </Card>
     );

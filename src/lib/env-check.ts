@@ -3,7 +3,10 @@ import { connectionStringProblem } from "./db";
 
 // Settings the site needs in production (see .env.example). Reports names only, never values.
 const REQUIRED = [
-  "DATABASE_URL",
+  "MYSQL_HOST",
+  "MYSQL_DATABASE",
+  "MYSQL_USER",
+  "MYSQL_PASSWORD",
   "OBJECT_STORAGE_ENDPOINT",
   "OBJECT_STORAGE_BUCKET",
   "OBJECT_STORAGE_ACCESS_KEY",
@@ -20,12 +23,14 @@ export function productionEnvProblems(env: NodeJS.ProcessEnv = process.env): str
   else if (!strongSecret(env.SESSION_SECRET)) problems.push("SESSION_SECRET is too short or still the example value");
   const site = env.NEXT_PUBLIC_SITE_URL;
   if (site && !/^https?:\/\/[^/]+$/.test(site.replace(/\/$/, ""))) problems.push("NEXT_PUBLIC_SITE_URL must be the site address only, e.g. https://prajaride.com");
-  // A connection string that cannot be parsed is reported here, at start-up, rather than being
-  // discovered separately by every page that needs the database.
+  // Settings that cannot be parsed are reported here, at start-up, rather than being discovered
+  // separately by every page that needs the database.
   const connection = connectionStringProblem(env);
   if (connection) problems.push(connection);
-  if (env.DATABASE_URL && !/sslmode=(require|verify-ca|verify-full)/.test(env.DATABASE_URL) && env.ALLOW_INSECURE_DATABASE !== "true") {
-    problems.push("DATABASE_URL has no ?sslmode=require: the database connection would not be encrypted (enable SSL on the database server; ALLOW_INSECURE_DATABASE=true overrides, not recommended)");
+  // TLS is on unless it is switched off: a MySQL connection that crosses the internet in the clear
+  // carries the admin's own data, so turning it off is a deliberate act and is reported.
+  if (env.MYSQL_SSL === "false" && env.ALLOW_INSECURE_DATABASE !== "true") {
+    problems.push("MYSQL_SSL=false: the database connection would not be encrypted (ALLOW_INSECURE_DATABASE=true overrides, not recommended — safe only when MySQL is on this same server)");
   }
   return problems;
 }

@@ -45,3 +45,9 @@ next-env.d.ts
 /.cache
 # photos waiting to be uploaded to object storage (keep across deploys)
 /.data
+
+# Database dumps: real driver, applicant and customer data (names, mobile numbers, PIN hashes,
+# citizenship and licence numbers, addresses). Keep them off the remote.
+/db/migration.sql
+/db/*-dump.sql
+/db/*.dump

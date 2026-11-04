@@ -11,8 +11,8 @@ export type StoredSiteImage = { slot: string; width: number; height: number; ver
 
 export async function listSiteImages(): Promise<StoredSiteImage[]> {
   const q = await sql();
-  const rows = await q`SELECT slot, width, height, version, updated_at AS "updatedAt" FROM site_images ORDER BY slot`;
-  return rows as unknown as StoredSiteImage[];
+  const rows = await q`SELECT slot, width, height, version, updated_at AS updatedAt FROM site_images ORDER BY slot`;
+  return rows.map((r) => ({ ...r, width: Number(r.width), height: Number(r.height), version: Number(r.version) })) as unknown as StoredSiteImage[];
 }
 
 export async function readSiteImage(slot: string, size: "full" | "thumb"): Promise<{ mime: string; bytes: Buffer } | null> {
@@ -34,10 +34,12 @@ export async function replaceSiteImage(slot: string, img: { mime: string; data: 
   const thumbKey = storageKey(`site/${slot}/${id}-thumb.${ext}`);
   await Promise.all([putObject(fullKey, img.data, img.mime), putObject(thumbKey, img.thumb, img.mime)]);
   const [old] = await q`SELECT storage_key, thumb_key FROM site_images WHERE slot = ${slot}`;
+  // ON DUPLICATE KEY UPDATE reads the new row with VALUES(col) and the existing one by bare name,
+  // which is how version keeps counting up from what is already stored.
   await q`
     INSERT INTO site_images (slot, storage_key, thumb_key, mime, width, height, alt)
     VALUES (${slot}, ${fullKey}, ${thumbKey}, ${img.mime}, ${img.width}, ${img.height}, ${img.alt ?? ""})
-    ON CONFLICT (slot) DO UPDATE SET storage_key = EXCLUDED.storage_key, thumb_key = EXCLUDED.thumb_key, mime = EXCLUDED.mime,
-      width = EXCLUDED.width, height = EXCLUDED.height, version = site_images.version + 1, updated_at = now()`;
+    ON DUPLICATE KEY UPDATE storage_key = VALUES(storage_key), thumb_key = VALUES(thumb_key), mime = VALUES(mime),
+      width = VALUES(width), height = VALUES(height), version = version + 1, updated_at = UTC_TIMESTAMP()`;
   if (old) await deleteObjects([old.storage_key, old.thumb_key]);
 }

@@ -3,6 +3,7 @@ import { randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { normalizeDriverId, DIRECT_DRIVER_ID } from "./config";
 import { sql } from "./db";
+import { bool, duplicateKeyIs, nepalToday } from "./mysql";
 import { generateRefCode, isRefCode } from "./refcode";
 import { isProfileComplete, type DriverData, type LicenseCategory, type PayoutMethod, type ProfileData, type VehicleType } from "./validation";
 
@@ -55,18 +56,32 @@ export type Driver = {
   createdAt: Date;
 };
 
-const date = (col: string, as: string) => `to_char(${col}, 'YYYY-MM-DD') AS "${as}"`;
+const date = (col: string, as: string) => `DATE_FORMAT(${col}, '%Y-%m-%d') AS ${as}`;
 const COLUMNS = [
   "id", "name", "phone", "email", "age", date("date_of_birth", "dateOfBirth"), "address", "province", "district",
-  "municipality", "ward", `emergency_name AS "emergencyName"`, `emergency_phone AS "emergencyPhone"`,
-  `citizenship_no AS "citizenshipNo"`, `license_no AS "licenseNo"`, `license_category AS "licenseCategory"`,
-  date("license_expiry", "licenseExpiry"), `vehicle_no AS "vehicleNo"`, `vehicle_type AS "vehicleType"`,
-  `vehicle_brand AS "vehicleBrand"`, `vehicle_model AS "vehicleModel"`, `vehicle_color AS "vehicleColor"`,
-  `vehicle_year AS "vehicleYear"`, `bluebook_no AS "bluebookNo"`, date("bluebook_expiry", "bluebookExpiry"),
-  date("insurance_expiry", "insuranceExpiry"), `payout_method AS "payoutMethod"`, `payout_account AS "payoutAccount"`,
-  `payout_bank AS "payoutBank"`, date("sticker_given_on", "stickerGivenOn"), `training_done AS "trainingDone"`,
-  "notes", "active", `ref_code AS "refCode"`, `profile_complete AS "profileComplete"`, "verified", `created_at AS "createdAt"`,
+  "municipality", "ward", `emergency_name AS emergencyName`, `emergency_phone AS emergencyPhone`,
+  `citizenship_no AS citizenshipNo`, `license_no AS licenseNo`, `license_category AS licenseCategory`,
+  date("license_expiry", "licenseExpiry"), `vehicle_no AS vehicleNo`, `vehicle_type AS vehicleType`,
+  `vehicle_brand AS vehicleBrand`, `vehicle_model AS vehicleModel`, `vehicle_color AS vehicleColor`,
+  `vehicle_year AS vehicleYear`, `bluebook_no AS bluebookNo`, date("bluebook_expiry", "bluebookExpiry"),
+  date("insurance_expiry", "insuranceExpiry"), `payout_method AS payoutMethod`, `payout_account AS payoutAccount`,
+  `payout_bank AS payoutBank`, date("sticker_given_on", "stickerGivenOn"), `training_done AS trainingDone`,
+  "notes", "active", `ref_code AS refCode`, `profile_complete AS profileComplete`, "verified", `created_at AS createdAt`,
 ].join(", ");
+
+/**
+ * A drivers row as a Driver. MySQL returns TINYINT(1) as 0/1, so the flags are converted here
+ * rather than leaving `active ? ...` to work by accident and `active === true` to fail.
+ */
+function toDriver(r: Record<string, unknown>): Driver {
+  return {
+    ...r,
+    trainingDone: bool(r.trainingDone),
+    active: bool(r.active),
+    profileComplete: bool(r.profileComplete),
+    verified: bool(r.verified),
+  } as unknown as Driver;
+}
 
 export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16);
@@ -83,28 +98,33 @@ async function verifyPin(pin: string, stored: string): Promise<boolean> {
 
 export async function listDrivers(): Promise<Driver[]> {
   const q = await sql();
-  return (await q.unsafe(`SELECT ${COLUMNS} FROM drivers ORDER BY created_at DESC`)) as unknown as Driver[];
+  const rows = await q.unsafe(`SELECT ${COLUMNS} FROM drivers ORDER BY created_at DESC`);
+  return rows.map(toDriver);
 }
 
 export async function getDriver(id: string): Promise<Driver | null> {
   const q = await sql();
   const [row] = await q.unsafe(`SELECT ${COLUMNS} FROM drivers WHERE id = $1`, [id]);
-  return (row as unknown as Driver) ?? null;
+  return row ? toDriver(row) : null;
 }
 
 /** Next free DRVnnn, counting IDs already printed on stickers even if not registered. */
 export async function nextDriverId(): Promise<string> {
   const q = await sql();
+  // Postgres captured the number with substring(id FROM '^DRV(\d+)$'); MySQL has no capture
+  // group in SUBSTRING, so the prefix is dropped and the remainder cast, with ids that are not
+  // DRV<digits> filtered out instead of relying on the regex to return NULL for them.
   const [row] = await q`
-    SELECT GREATEST(100, COALESCE(max(substring(id FROM '^DRV(\\d+)$')::int), 100)) + 1 AS n
-    FROM (SELECT id FROM drivers UNION SELECT DISTINCT driver_id FROM referral_clicks) ids`;
-  return `DRV${row.n}`;
+    SELECT GREATEST(100, COALESCE(MAX(CAST(SUBSTRING(id, 4) AS UNSIGNED)), 100)) + 1 AS n
+    FROM (SELECT id FROM drivers UNION SELECT DISTINCT driver_id FROM referral_clicks) ids
+    WHERE id REGEXP '^DRV[0-9]+$'`;
+  return `DRV${Number(row.n)}`;
 }
 
 export type DriverInput = DriverData;
 
-const isUniqueViolation = (err: unknown, constraint: string) =>
-  (err as { code?: string; constraint_name?: string }).code === "23505" && !!(err as { constraint_name?: string }).constraint_name?.includes(constraint);
+// MySQL names the index in the error message rather than in a field of its own.
+const isUniqueViolation = (err: unknown, constraint: string) => duplicateKeyIs(err, constraint);
 
 /** Column → value pairs for the editable profile fields. */
 function profileColumns(d: DriverInput) {
@@ -156,7 +176,7 @@ export async function regenerateRefCode(id: string): Promise<string> {
 export async function getDriverByRefCode(code: string): Promise<Driver | null> {
   const q = await sql();
   const [row] = await q.unsafe(`SELECT ${COLUMNS} FROM drivers WHERE ref_code = $1`, [code]);
-  return (row as unknown as Driver) ?? null;
+  return row ? toDriver(row) : null;
 }
 
 /**
@@ -228,34 +248,35 @@ export async function attemptLogin(phone: string, pin: string): Promise<LoginRes
   const generic = { ok: false as const, error: "Wrong phone number or PIN." };
   const q = await sql();
   const [d] = await q`
-    SELECT id, pin_hash, active, failed_logins, locked_until > now() AS locked,
-           ceil(extract(epoch FROM locked_until - now()) / 60)::int AS "minutesLeft"
+    SELECT id, pin_hash, active, failed_logins,
+           locked_until > UTC_TIMESTAMP() AS locked,
+           CEIL(TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), locked_until) / 60) AS minutesLeft
     FROM drivers WHERE phone = ${phone}`;
   if (!d) {
     await verifyPin(pin, "scrypt:00:00").catch(() => {}); // similar timing for unknown phones
     return generic;
   }
-  if (d.locked) {
+  if (bool(d.locked)) {
     return { ok: false, error: `Too many wrong PINs. Try again in ${d.minutesLeft} min or ask the office to reset it.` };
   }
   if (!(await verifyPin(pin, d.pin_hash))) {
-    const failed = d.failed_logins + 1;
+    const failed = Number(d.failed_logins) + 1;
     await q`
       UPDATE drivers
       SET failed_logins = ${failed >= MAX_FAILED ? 0 : failed},
-          locked_until  = ${failed >= MAX_FAILED ? q`now() + ${`${LOCK_MINUTES} minutes`}::interval` : null}
+          locked_until  = ${failed >= MAX_FAILED ? q`UTC_TIMESTAMP() + INTERVAL ${LOCK_MINUTES} MINUTE` : null}
       WHERE id = ${d.id}`;
     return generic;
   }
-  if (!d.active) return { ok: false, error: "This account is inactive. Please contact the NepCab office." };
+  if (!bool(d.active)) return { ok: false, error: "This account is inactive. Please contact the NepCab office." };
   await q`UPDATE drivers SET failed_logins = 0, locked_until = NULL WHERE id = ${d.id}`;
-  return { ok: true, driverId: d.id };
+  return { ok: true, driverId: d.id as string };
 }
 
 /** Marks a browser as belonging to a driver so its store taps never count as referrals. */
 export async function registerDriverDevice(deviceId: string, driverId: string): Promise<void> {
   const q = await sql();
-  await q`INSERT INTO driver_devices (device_id, driver_id) VALUES (${deviceId}, ${driverId}) ON CONFLICT (device_id) DO NOTHING`;
+  await q`INSERT IGNORE INTO driver_devices (device_id, driver_id) VALUES (${deviceId}, ${driverId})`;
 }
 
 /**
@@ -280,12 +301,25 @@ export type ExpiringDocument = { driverId: string; name: string; document: "Lice
 /** Active drivers' documents that expired or expire within `days` days, soonest first. */
 export async function listExpiringDocuments(days = 30): Promise<ExpiringDocument[]> {
   const q = await sql();
+  // Postgres unpivoted the three date columns with LATERAL (VALUES ...); MySQL has no such
+  // construct, so the same three rows per driver come from a UNION ALL over the one table.
   const rows = await q`
-    SELECT id AS "driverId", name, doc AS document, to_char(d, 'YYYY-MM-DD') AS date,
-           (d - (now() AT TIME ZONE 'Asia/Kathmandu')::date)::int AS "daysLeft"
-    FROM drivers,
-         LATERAL (VALUES ('License', license_expiry), ('Insurance', insurance_expiry), ('Bluebook', bluebook_expiry)) v(doc, d)
-    WHERE active AND d IS NOT NULL AND d <= (now() AT TIME ZONE 'Asia/Kathmandu')::date + ${days}::int
+    SELECT driverId, name, document, DATE_FORMAT(d, '%Y-%m-%d') AS date,
+           DATEDIFF(d, ${q.unsafe(nepalToday())}) AS daysLeft
+    FROM (
+      SELECT id AS driverId, name, 'License'   AS document, license_expiry   AS d FROM drivers WHERE active
+      UNION ALL
+      SELECT id,             name, 'Insurance' AS document, insurance_expiry AS d FROM drivers WHERE active
+      UNION ALL
+      SELECT id,             name, 'Bluebook'  AS document, bluebook_expiry  AS d FROM drivers WHERE active
+    ) docs
+    WHERE d IS NOT NULL AND d <= ${q.unsafe(nepalToday())} + INTERVAL ${days} DAY
     ORDER BY d`;
-  return rows as unknown as ExpiringDocument[];
+  return rows.map((r) => ({
+    driverId: r.driverId as string,
+    name: r.name as string,
+    document: r.document as ExpiringDocument["document"],
+    date: r.date as string,
+    daysLeft: Number(r.daysLeft),
+  }));
 }

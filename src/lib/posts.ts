@@ -1,6 +1,8 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { sql } from "./db";
+import { randomUUID } from "node:crypto";
+import { bool } from "./mysql";
 import type { PostKind } from "./post-format";
 
 // News and offers shown at /news, managed in /admin/news.
@@ -27,9 +29,12 @@ export type PostInput = { kind: PostKind; title: string; excerpt: string; body: 
 
 export const POSTS_TAG = "posts";
 
-const COLUMNS = `p.id, p.slug, p.kind, p.title, p.excerpt, p.body, p.cover_id AS "coverId", ph.width AS "coverWidth", ph.height AS "coverHeight",
-  p.published, p.published_at AS "publishedAt", to_char(p.ends_on, 'YYYY-MM-DD') AS "endsOn", p.topic, p.updated_at AS "updatedAt"`;
+const COLUMNS = `p.id, p.slug, p.kind, p.title, p.excerpt, p.body, p.cover_id AS coverId, ph.width AS coverWidth, ph.height AS coverHeight,
+  p.published, p.published_at AS publishedAt, DATE_FORMAT(p.ends_on, '%Y-%m-%d') AS endsOn, p.topic, p.updated_at AS updatedAt`;
 const FROM = `FROM posts p LEFT JOIN photos ph ON ph.id = p.cover_id`;
+
+/** MySQL returns `published` as 0/1; the Post type says boolean. */
+const toPost = (r: Record<string, unknown>): Post => ({ ...r, published: bool(r.published) }) as unknown as Post;
 
 /** Published posts, newest first (cached until the admin edits a post). */
 export async function getPublishedPosts(): Promise<Post[]> {
@@ -39,7 +44,7 @@ export async function getPublishedPosts(): Promise<Post[]> {
   try {
     const q = await sql();
     const rows = await q.unsafe(`SELECT ${COLUMNS} ${FROM} WHERE p.published ORDER BY p.published_at DESC LIMIT 100`);
-    return rows as unknown as Post[];
+    return rows.map(toPost);
   } catch (err) {
     console.error("[posts] unavailable:", err);
     return [];
@@ -53,7 +58,7 @@ export async function getPublishedPost(slug: string): Promise<Post | null> {
   try {
     const q = await sql();
     const [row] = await q.unsafe(`SELECT ${COLUMNS} ${FROM} WHERE p.published AND p.slug = $1`, [slug]);
-    return (row as unknown as Post) ?? null;
+    return row ? toPost(row) : null;
   } catch (err) {
     console.error("[posts] unavailable:", err);
     return null;
@@ -63,7 +68,7 @@ export async function getPublishedPost(slug: string): Promise<Post | null> {
 export async function listAllPosts(): Promise<Post[]> {
   const q = await sql();
   const rows = await q.unsafe(`SELECT ${COLUMNS} ${FROM} ORDER BY p.published, COALESCE(p.published_at, p.created_at) DESC`);
-  return rows as unknown as Post[];
+  return rows.map(toPost);
 }
 
 function slugify(title: string): string {
@@ -93,8 +98,10 @@ const row = (p: PostInput) => ({ kind: p.kind, title: p.title, excerpt: p.excerp
 export async function createPost(p: PostInput): Promise<string> {
   const q = await sql();
   const slug = await uniqueSlug(p.title);
-  const [r] = await q`INSERT INTO posts ${q({ ...row(p), slug, published_at: p.published ? new Date() : null })} RETURNING slug`;
-  return r.slug as string;
+  // Postgres defaulted the id with gen_random_uuid() and handed the slug back with RETURNING.
+  // MySQL has neither, so the id is generated here and the slug is already known.
+  await q`INSERT INTO posts ${q({ id: randomUUID(), ...row(p), slug, published_at: p.published ? new Date() : null })}`;
+  return slug;
 }
 
 /** Updates a post. The link (slug) stays the same once published, so shared links keep working. */
@@ -110,7 +117,9 @@ export async function updatePost(id: string, p: PostInput): Promise<string | nul
 
 export async function deletePost(id: string): Promise<void> {
   const q = await sql();
-  const [p] = await q`DELETE FROM posts WHERE id = ${id} RETURNING cover_id`;
+  // No RETURNING in MySQL: read the cover first, and only drop it once the post itself is gone.
+  const [p] = await q`SELECT cover_id FROM posts WHERE id = ${id}`;
+  const deleted = await q`DELETE FROM posts WHERE id = ${id}`;
   // Covers live only on their post.
-  if (p?.cover_id) await q`DELETE FROM photos WHERE id = ${p.cover_id} AND album = 'news'`;
+  if (deleted.count > 0 && p?.cover_id) await q`DELETE FROM photos WHERE id = ${p.cover_id} AND album = 'news'`;
 }

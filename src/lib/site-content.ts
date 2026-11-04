@@ -2,6 +2,7 @@ import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { BRAND } from "./config";
 import { sql } from "./db";
+import { asJson } from "./mysql";
 
 // Website text that the admin can edit at /admin/website. Anything not saved yet falls back to
 // these defaults, so the site always renders even with an empty (or unreachable) database.
@@ -119,10 +120,10 @@ export async function getSiteContent(): Promise<SiteContent> {
     const [row] = await q`SELECT content FROM site_settings WHERE id = 1`;
     if (!row) {
       // First run on a new database: store the starting content, so everything is edited from the database
-      await q`INSERT INTO site_settings (id, content, updated_at) VALUES (1, ${q.json(DEFAULT_CONTENT as never)}, now()) ON CONFLICT (id) DO NOTHING`;
+      await q`INSERT IGNORE INTO site_settings (id, content, updated_at) VALUES (1, ${q.json(DEFAULT_CONTENT as never)}, UTC_TIMESTAMP())`;
       return DEFAULT_CONTENT;
     }
-    return merge(row.content as Partial<SiteContent>);
+    return merge(asJson<Partial<SiteContent>>(row.content, {}));
   } catch (err) {
     console.error("[site-content] using defaults:", err);
     return DEFAULT_CONTENT;
@@ -133,12 +134,12 @@ export async function getSiteContent(): Promise<SiteContent> {
 export async function readSiteContent(): Promise<SiteContent> {
   const q = await sql();
   const [row] = await q`SELECT content FROM site_settings WHERE id = 1`;
-  return merge(row?.content as Partial<SiteContent> | undefined);
+  return merge(row ? asJson<Partial<SiteContent>>(row.content, {}) : undefined);
 }
 
 export async function saveSiteContent(content: SiteContent): Promise<void> {
   const q = await sql();
   await q`
-    INSERT INTO site_settings (id, content, updated_at) VALUES (1, ${q.json(content as never)}, now())
-    ON CONFLICT (id) DO UPDATE SET content = EXCLUDED.content, updated_at = now()`;
+    INSERT INTO site_settings (id, content, updated_at) VALUES (1, ${q.json(content as never)}, UTC_TIMESTAMP())
+    ON DUPLICATE KEY UPDATE content = VALUES(content), updated_at = UTC_TIMESTAMP()`;
 }

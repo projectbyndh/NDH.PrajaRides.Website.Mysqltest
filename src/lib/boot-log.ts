@@ -22,7 +22,10 @@ const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)}MB`;
 // whether they are set at build time: a panel can supply one environment to the build and another
 // to the running server, and only the running one matters here.
 const SETTINGS = [
-  "DATABASE_URL",
+  "MYSQL_HOST",
+  "MYSQL_DATABASE",
+  "MYSQL_USER",
+  "MYSQL_PASSWORD",
   "OBJECT_STORAGE_ENDPOINT",
   "OBJECT_STORAGE_BUCKET",
   "OBJECT_STORAGE_ACCESS_KEY",

@@ -6,6 +6,7 @@ import { normalizeDriverId } from "@/lib/config";
 import { markApplication } from "@/lib/applications";
 import { createDriver, deleteDriver, getDriver, nextDriverId, regenerateRefCode, setPin, updateDriver, verifyDriver } from "@/lib/drivers";
 import { requireAdmin } from "@/lib/session";
+import { isDuplicateKey } from "@/lib/mysql";
 import { driverFieldError, isProfileComplete, pinError, validateDriver, type FieldErrors } from "@/lib/validation";
 
 export type FormState = {
@@ -25,11 +26,11 @@ function fail(formData: FormData, fieldErrors: FieldErrors, error?: string): For
   return { error: error ?? "Please fix the highlighted fields.", fieldErrors, values };
 }
 
-/** Maps a Postgres unique violation to the field it belongs to. */
+/** Maps a MySQL duplicate-key error to the field it belongs to. */
 function uniqueViolation(err: unknown): FieldErrors | null {
-  const e = err as { code?: string; constraint_name?: string };
-  if (e?.code !== "23505") return null;
-  return e.constraint_name?.includes("phone")
+  if (!isDuplicateKey(err)) return null;
+  // MySQL names the offending index in the message rather than in a field of its own.
+  return (err as { message?: string }).message?.includes("phone")
     ? { phone: "Another driver already uses this mobile number." }
     : { id: "This driver ID is already registered." };
 }

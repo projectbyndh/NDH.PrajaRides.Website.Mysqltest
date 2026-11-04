@@ -47,13 +47,13 @@ export type PhotoKind = "vehicle" | "license" | "bluebook";
 export type ApplicationPhotoInput = { kind: PhotoKind; mime: string; data: Buffer; thumb: Buffer; width: number; height: number };
 export type ApplicationPhoto = { id: string; applicationId: string; kind: PhotoKind; width: number; height: number };
 
-const COLUMNS = `id, name, phone, email, address, to_char(date_of_birth, 'YYYY-MM-DD') AS "dateOfBirth", district, municipality, ward,
-  vehicle_type AS "vehicleType", vehicle_no AS "vehicleNo", vehicle_brand AS "vehicleBrand", license_no AS "licenseNo",
-  license_category AS "licenseCategory", to_char(license_expiry, 'YYYY-MM-DD') AS "licenseExpiry", message, status,
-  review_note AS "reviewNote", driver_id AS "driverId", created_at AS "createdAt", reviewed_at AS "reviewedAt",
-  citizenship_no AS "citizenshipNo", emergency_name AS "emergencyName", emergency_phone AS "emergencyPhone",
-  vehicle_model AS "vehicleModel", vehicle_color AS "vehicleColor", vehicle_year AS "vehicleYear", ownership,
-  bluebook_no AS "bluebookNo", to_char(insurance_expiry, 'YYYY-MM-DD') AS "insuranceExpiry", availability`;
+const COLUMNS = `id, name, phone, email, address, DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS dateOfBirth, district, municipality, ward,
+  vehicle_type AS vehicleType, vehicle_no AS vehicleNo, vehicle_brand AS vehicleBrand, license_no AS licenseNo,
+  license_category AS licenseCategory, DATE_FORMAT(license_expiry, '%Y-%m-%d') AS licenseExpiry, message, status,
+  review_note AS reviewNote, driver_id AS driverId, created_at AS createdAt, reviewed_at AS reviewedAt,
+  citizenship_no AS citizenshipNo, emergency_name AS emergencyName, emergency_phone AS emergencyPhone,
+  vehicle_model AS vehicleModel, vehicle_color AS vehicleColor, vehicle_year AS vehicleYear, ownership,
+  bluebook_no AS bluebookNo, DATE_FORMAT(insurance_expiry, '%Y-%m-%d') AS insuranceExpiry, availability`;
 
 export type SubmitResult = { ok: true } | { ok: false; field?: string; error: string };
 
@@ -66,8 +66,8 @@ export async function submitApplication(a: ApplicationData, ipAddress: string | 
   if (pending) return { ok: false, field: "phone", error: "We already have your application. Our team will call you soon." };
   // Light abuse guard: at most 5 applications per network per day.
   if (ipAddress) {
-    const [{ n }] = await q`SELECT count(*)::int AS n FROM driver_applications WHERE ip_address = ${ipAddress} AND created_at > now() - interval '1 day'`;
-    if (n >= 5) return { ok: false, error: "Too many applications from this network today. Please call us instead." };
+    const [{ n }] = await q`SELECT count(*) AS n FROM driver_applications WHERE ip_address = ${ipAddress} AND created_at > UTC_TIMESTAMP() - INTERVAL 1 DAY`;
+    if (Number(n) >= 5) return { ok: false, error: "Too many applications from this network today. Please call us instead." };
   }
   // Photos are saved on the server's disk first, then uploaded to object storage in the background
   // after the reply (see queueObject), so the applicant isn't kept waiting on slow uploads. If the
@@ -129,8 +129,8 @@ export async function listApplicationPhotos(applicationIds: string[]): Promise<A
   if (!applicationIds.length) return [];
   const q = await sql();
   const rows = await q`
-    SELECT id, application_id AS "applicationId", kind, width, height FROM application_photos
-    WHERE application_id = ANY(${applicationIds}::uuid[])
+    SELECT id, application_id AS applicationId, kind, width, height FROM application_photos
+    WHERE application_id IN (${applicationIds})
     ORDER BY kind = 'vehicle' DESC, kind, created_at`;
   return rows as unknown as ApplicationPhoto[];
 }
@@ -150,8 +150,8 @@ export async function readApplicationPhoto(id: string, size: "full" | "thumb"): 
 
 export async function countPendingApplications(): Promise<number> {
   const q = await sql();
-  const [{ n }] = await q`SELECT count(*)::int AS n FROM driver_applications WHERE status = 'pending'`;
-  return n;
+  const [{ n }] = await q`SELECT count(*) AS n FROM driver_applications WHERE status = 'pending'`;
+  return Number(n);
 }
 
 export async function markApplication(id: string, status: ApplicationStatus, note: string | null, driverId: string | null = null): Promise<void> {
@@ -159,7 +159,7 @@ export async function markApplication(id: string, status: ApplicationStatus, not
   await q`
     UPDATE driver_applications
     SET status = ${status}, review_note = ${note}, driver_id = ${driverId},
-        reviewed_at = ${status === "pending" ? null : q`now()`}
+        reviewed_at = ${status === "pending" ? null : q`UTC_TIMESTAMP()`}
     WHERE id = ${id}`;
 }
 

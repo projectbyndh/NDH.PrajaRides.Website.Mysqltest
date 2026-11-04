@@ -1,100 +1,62 @@
 import "server-only";
-import postgres from "postgres";
 import { generateRefCode } from "./refcode";
-import { SCHEMA, SCHEMA_VERSION } from "./schema";
+import { SCHEMA_VERSION, STARTING_TIERS, schemaStatements } from "./schema";
+import {
+  bool,
+  client,
+  connectionProblem,
+  duplicateKeyIs,
+  inNepal,
+  nepalToday,
+  type Sql,
+} from "./mysql";
 import type { Platform } from "./tracking";
 
-const CONNECTION_STRING_HELP =
-  "DATABASE_URL is not a valid connection string. It has to read" +
-  " postgres://user:password@host:5432/dbname?sslmode=require, with no surrounding quotes and with" +
-  " special characters in the password URL-encoded (@ as %40, # as %23).";
+export { connectionProblem } from "./mysql";
 
-// Hosting panels and the ".env" importers that feed them often keep the quotes around a pasted
-// value, and a quoted string is not a URL. The quotes are stripped here because the alternative is
-// a bare "Invalid URL" thrown from whichever page happened to need the database first - a long way
-// from the setting that actually caused it, and reported as a broken image rather than a bad value.
-const unquote = (value: string) =>
-  value
-    .trim()
-    .replace(/^(['"])([\s\S]*)\1$/, "$2")
-    .trim();
-
-function connectionString(): string {
-  const raw = process.env.DATABASE_URL;
-  if (!raw?.trim()) throw new Error("DATABASE_URL is not set. See README → Deploy.");
-  let url: URL;
-  try {
-    url = new URL(unquote(raw));
-  } catch {
-    throw new Error(CONNECTION_STRING_HELP);
-  }
-  // Some hosts add channel_binding=require; postgres.js would forward it as a server
-  // setting and the connection would be rejected.
-  url.searchParams.delete("channel_binding");
-  return url.toString();
-}
-
-/**
- * What is wrong with DATABASE_URL, or null when it can be used. Lets the start-up check name a
- * malformed connection string at boot, instead of leaving every page to discover it one by one.
- * An unset variable is reported separately, so it is not a problem here.
- */
-export function connectionStringProblem(env: NodeJS.ProcessEnv = process.env): string | null {
-  const raw = env.DATABASE_URL;
-  if (!raw?.trim()) return null;
-  try {
-    new URL(unquote(raw));
-    return null;
-  } catch {
-    return CONNECTION_STRING_HELP;
-  }
-}
-
-// A database that answers "no" is survivable: every page falls back to its starting content. A
-// database that answers *nothing* is not, so the wait has to be bounded. A host that drops packets
-// instead of refusing them (a firewall DROP, or a server that is simply gone) would otherwise stall
-// on the operating system's TCP timeout of around two minutes, and nginx returns 504 Gateway
-// Time-out before the page has sent anything.
-const CONNECT_TIMEOUT = Number(process.env.DATABASE_CONNECT_TIMEOUT || 8);
+/** Kept under its old name so the start-up check reads the same (see lib/env-check.ts). */
+export const connectionStringProblem = connectionProblem;
 
 // How long a failed schema check is remembered (below).
 const RETRY_AFTER_MS = Number(process.env.DATABASE_RETRY_AFTER_MS || 30_000);
 
 const globalForDb = globalThis as unknown as {
-  sql?: postgres.Sql;
   schemaReady?: Promise<void>;
   schemaFailed?: { at: number; error: unknown };
 };
 
-function db(): postgres.Sql {
-  // prepare: false keeps it compatible with transaction poolers (Supabase, PgBouncer).
-  globalForDb.sql ??= postgres(connectionString(), {
-    max: 5,
-    prepare: false,
-    idle_timeout: 20,
-    connect_timeout: CONNECT_TIMEOUT,
-    onnotice: () => {}, // silence "already exists, skipping"
-  });
-  return globalForDb.sql;
-}
-
 /**
  * Brings the database up to SCHEMA_VERSION. Runs the (idempotent) schema only when the stored
- * version is older, so normal cold starts do one cheap read instead of ALTER TABLE statements,
- * which take table locks. An advisory lock stops two instances migrating at the same time.
+ * version is older, so normal cold starts do one cheap read instead of DDL, which on MySQL is not
+ * transactional and takes metadata locks. GET_LOCK stops two instances migrating at the same time
+ * — MySQL has no transactional DDL, so an advisory lock is the only guard available.
  */
-async function migrate(client: postgres.Sql): Promise<void> {
-  await client`CREATE TABLE IF NOT EXISTS schema_meta (id INT PRIMARY KEY, version INT NOT NULL)`;
-  const [row] = await client`SELECT version FROM schema_meta WHERE id = 1`;
-  if (row && row.version >= SCHEMA_VERSION) return;
-  await client.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(472910)`;
-    const [again] = await tx`SELECT version FROM schema_meta WHERE id = 1`;
-    if (again && again.version >= SCHEMA_VERSION) return;
-    await tx.unsafe(SCHEMA);
-    await tx`INSERT INTO schema_meta (id, version) VALUES (1, ${SCHEMA_VERSION}) ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version`;
-  });
-  await backfillRefCodes(client);
+async function migrate(q: Sql): Promise<void> {
+  await q`CREATE TABLE IF NOT EXISTS \`schema_meta\` (\`id\` INT NOT NULL, \`version\` INT NOT NULL, PRIMARY KEY (\`id\`)) ENGINE=InnoDB`;
+  const [row] = await q`SELECT version FROM \`schema_meta\` WHERE id = 1`;
+  if (row && Number(row.version) >= SCHEMA_VERSION) return;
+
+  const [lock] = await q`SELECT GET_LOCK('praja_schema', 10) AS got`;
+  if (!Number(lock?.got)) throw new Error("Another instance is migrating the database; try again shortly.");
+  try {
+    const [again] = await q`SELECT version FROM \`schema_meta\` WHERE id = 1`;
+    if (again && Number(again.version) >= SCHEMA_VERSION) return;
+    for (const statement of schemaStatements()) await q.unsafe(statement);
+    await q`
+      INSERT INTO \`schema_meta\` (id, version) VALUES (1, ${SCHEMA_VERSION})
+      ON DUPLICATE KEY UPDATE version = VALUES(version)`;
+    await seedTiers(q);
+  } finally {
+    await q`SELECT RELEASE_LOCK('praja_schema')`;
+  }
+  await backfillRefCodes(q);
+}
+
+/** Starting reward tiers, only on a database that has none (see schema.ts). */
+async function seedTiers(q: Sql): Promise<void> {
+  const [{ n }] = await q`SELECT count(*) AS n FROM reward_tiers`;
+  if (Number(n) > 0) return;
+  for (const t of STARTING_TIERS) await q`INSERT INTO reward_tiers ${q({ ...t })}`;
 }
 
 /**
@@ -106,11 +68,11 @@ async function migrate(client: postgres.Sql): Promise<void> {
  * nginx's limit. The failure is remembered for RETRY_AFTER_MS and re-thrown at once, which lets
  * each helper fall back to its starting content in milliseconds instead.
  */
-export async function sql(): Promise<postgres.Sql> {
-  const client = db();
+export async function sql(): Promise<Sql> {
+  const q = client();
   const failed = globalForDb.schemaFailed;
   if (failed && Date.now() - failed.at < RETRY_AFTER_MS) throw failed.error;
-  globalForDb.schemaReady ??= migrate(client).then(
+  globalForDb.schemaReady ??= migrate(q).then(
     () => {
       globalForDb.schemaFailed = undefined;
     },
@@ -121,7 +83,7 @@ export async function sql(): Promise<postgres.Sql> {
     },
   );
   await globalForDb.schemaReady;
-  return client;
+  return q;
 }
 
 /**
@@ -129,20 +91,19 @@ export async function sql(): Promise<postgres.Sql> {
  * diagnostic check always reports what the database answers right now (see /api/health).
  */
 export async function pingDatabase(): Promise<void> {
-  const client = db();
-  await client`SELECT 1`;
+  await client()`SELECT 1`;
 }
 
 /** Gives every driver created before referral codes existed a code of their own. */
-async function backfillRefCodes(client: postgres.Sql): Promise<void> {
-  const rows = await client`SELECT id FROM drivers WHERE ref_code IS NULL`;
+async function backfillRefCodes(q: Sql): Promise<void> {
+  const rows = await q`SELECT id FROM drivers WHERE ref_code IS NULL`;
   for (const { id } of rows) {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
-        await client`UPDATE drivers SET ref_code = ${generateRefCode()} WHERE id = ${id} AND ref_code IS NULL`;
+        await q`UPDATE drivers SET ref_code = ${generateRefCode()} WHERE id = ${id} AND ref_code IS NULL`;
         break;
       } catch (err) {
-        if ((err as { code?: string }).code !== "23505") throw err; // retry only on a (very unlikely) clash
+        if (!duplicateKeyIs(err, "ref_code")) throw err; // retry only on a (very unlikely) clash
       }
     }
   }
@@ -165,7 +126,7 @@ export async function logClick(e: ClickEvent): Promise<void> {
   const q = await sql();
   await q`
     INSERT INTO referral_clicks
-      (id, driver_id, event_type, platform, store, visit_id, device_id, ip_address, user_agent, referrer)
+      (\`id\`, \`driver_id\`, \`event_type\`, \`platform\`, \`store\`, \`visit_id\`, \`device_id\`, \`ip_address\`, \`user_agent\`, \`referrer\`)
     VALUES
       (${e.id ?? crypto.randomUUID()}, ${e.driverId}, ${e.eventType}, ${e.platform}, ${e.store ?? null},
        ${e.visitId ?? null}, ${e.deviceId ?? null}, ${e.ipAddress}, ${e.userAgent}, ${e.referrer})`;
@@ -180,24 +141,30 @@ export async function logClick(e: ClickEvent): Promise<void> {
  * "Downloads" are unique phones that tapped a store button. The site can't see the install
  * itself, which happens inside Google Play / the App Store.
  */
-function counted(q: postgres.Sql) {
-  return q.unsafe(`(
-    SELECT r.*, COALESCE(r.device_id::text, 'ip:' || COALESCE(r.ip_address, '') || '|' || md5(COALESCE(r.user_agent, ''))) AS dkey
-    FROM referral_clicks r
-    WHERE NOT EXISTS (SELECT 1 FROM driver_devices dd WHERE dd.device_id = r.device_id)
-  )`);
-}
+const COUNTED = `(
+  SELECT r.*, COALESCE(r.device_id, CONCAT('ip:', COALESCE(r.ip_address, ''), '|', MD5(COALESCE(r.user_agent, '')))) AS dkey
+  FROM referral_clicks r
+  WHERE NOT EXISTS (SELECT 1 FROM driver_devices dd WHERE dd.device_id = r.device_id)
+)`;
 
-/** count(DISTINCT phone) for events matching a fixed SQL condition (static strings only). */
-const phones = (q: postgres.Sql, where: string) => q.unsafe(`count(DISTINCT e.dkey) FILTER (WHERE ${where})::int`);
+const counted = (q: Sql) => q.unsafe(COUNTED);
+
+/**
+ * count(DISTINCT phone) for events matching a fixed SQL condition (static strings only).
+ * Postgres wrote this as `count(...) FILTER (WHERE cond)`; MySQL has no FILTER, so the condition
+ * moves inside the aggregate — CASE yields NULL when it does not match, and COUNT skips NULLs.
+ */
+const phones = (q: Sql, where: string) => q.unsafe(`COUNT(DISTINCT CASE WHEN ${where} THEN e.dkey END)`);
+
 const SCAN = "e.event_type = 'scan'";
 const PLAY = "e.event_type = 'store_click' AND e.store = 'play'";
 const APPSTORE = "e.event_type = 'store_click' AND e.store = 'appstore'";
 const TAP = "e.event_type = 'store_click'";
 
-const monthRange = (q: postgres.Sql, period: string) =>
-  q`e.created_at >= ((${period} || '-01')::timestamp AT TIME ZONE 'Asia/Kathmandu')
-    AND e.created_at < ((${period} || '-01')::timestamp AT TIME ZONE 'Asia/Kathmandu') + interval '1 month'`;
+/** A 'YYYY-MM' period as the UTC instants its Nepal-local month starts and ends at. */
+const monthRange = (q: Sql, period: string) =>
+  q`e.created_at >= CONVERT_TZ(CONCAT(${period}, '-01 00:00:00'), '+05:45', '+00:00')
+    AND e.created_at <  CONVERT_TZ(CONCAT(${period}, '-01 00:00:00'), '+05:45', '+00:00') + INTERVAL 1 MONTH`;
 
 export type Downloads = { androidDownloads: number; iosDownloads: number };
 
@@ -227,6 +194,8 @@ export type DriverRow = Downloads & {
 
 export type DailyRow = { day: string; scans: number };
 
+const num = (v: unknown): number => Number(v ?? 0);
+
 export async function getTotals(): Promise<Totals> {
   const q = await sql();
   const [row] = await q`
@@ -235,69 +204,104 @@ export async function getTotals(): Promise<Totals> {
       ${phones(q, `${SCAN} AND e.platform = 'android'`)}   AS android,
       ${phones(q, `${SCAN} AND e.platform = 'ios'`)}       AS ios,
       ${phones(q, `${SCAN} AND e.platform = 'desktop'`)}   AS desktop,
-      ${phones(q, PLAY)}                                   AS "androidDownloads",
-      ${phones(q, APPSTORE)}                               AS "iosDownloads",
-      count(DISTINCT e.driver_id)::int                     AS drivers,
-      ${phones(q, `${SCAN} AND e.created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kathmandu') AT TIME ZONE 'Asia/Kathmandu'`)} AS "scansToday"
+      ${phones(q, PLAY)}                                   AS androidDownloads,
+      ${phones(q, APPSTORE)}                               AS iosDownloads,
+      COUNT(DISTINCT e.driver_id)                          AS drivers,
+      ${phones(q, `${SCAN} AND e.created_at >= CONVERT_TZ(${nepalToday()}, '+05:45', '+00:00')`)} AS scansToday
     FROM ${counted(q)} e`;
-  return row as unknown as Totals;
+  return {
+    scans: num(row?.scans),
+    android: num(row?.android),
+    ios: num(row?.ios),
+    desktop: num(row?.desktop),
+    androidDownloads: num(row?.androidDownloads),
+    iosDownloads: num(row?.iosDownloads),
+    drivers: num(row?.drivers),
+    scansToday: num(row?.scansToday),
+  };
 }
 
 export async function getLeaderboard(limit = 200): Promise<DriverRow[]> {
   const q = await sql();
+  // MAX() over the joined driver columns rather than naming them in GROUP BY: e.driver_id is the
+  // group, at most one drivers row joins it, so MAX is that row's value — and it satisfies
+  // ONLY_FULL_GROUP_BY on every MySQL version without relying on functional-dependency detection.
   const rows = await q`
     SELECT
-      e.driver_id                                          AS "driverId",
-      d.name,
-      d.phone,
-      d.ref_code                                           AS "refCode",
-      d.id IS NOT NULL                                     AS registered,
-      COALESCE(d.active, false)                            AS active,
+      e.driver_id                                          AS driverId,
+      MAX(d.name)                                          AS name,
+      MAX(d.phone)                                         AS phone,
+      MAX(d.ref_code)                                      AS refCode,
+      MAX(d.id) IS NOT NULL                                AS registered,
+      COALESCE(MAX(d.active), 0)                           AS active,
       ${phones(q, SCAN)}                                   AS scans,
       ${phones(q, `${SCAN} AND e.platform = 'android'`)}   AS android,
       ${phones(q, `${SCAN} AND e.platform = 'ios'`)}       AS ios,
       ${phones(q, `${SCAN} AND e.platform = 'desktop'`)}   AS desktop,
-      ${phones(q, PLAY)}                                   AS "androidDownloads",
-      ${phones(q, APPSTORE)}                               AS "iosDownloads",
-      max(e.created_at)                                    AS "lastActive"
+      ${phones(q, PLAY)}                                   AS androidDownloads,
+      ${phones(q, APPSTORE)}                               AS iosDownloads,
+      MAX(e.created_at)                                    AS lastActive
     FROM ${counted(q)} e
     LEFT JOIN drivers d ON d.id = e.driver_id
-    GROUP BY e.driver_id, d.id
-    ORDER BY scans DESC, "lastActive" DESC
+    GROUP BY e.driver_id
+    ORDER BY scans DESC, lastActive DESC
     LIMIT ${limit}`;
-  return rows as unknown as DriverRow[];
+  return rows.map((r) => ({
+    driverId: r.driverId as string,
+    name: (r.name as string | null) ?? null,
+    phone: (r.phone as string | null) ?? null,
+    refCode: (r.refCode as string | null) ?? null,
+    registered: bool(r.registered),
+    active: bool(r.active),
+    scans: num(r.scans),
+    android: num(r.android),
+    ios: num(r.ios),
+    desktop: num(r.desktop),
+    androidDownloads: num(r.androidDownloads),
+    iosDownloads: num(r.iosDownloads),
+    lastActive: r.lastActive as Date,
+  }));
 }
 
-/** Unique phones that scanned, per day for the last `days` days (Nepal time), zero-filled. */
+/**
+ * Unique phones that scanned, per day for the last `days` days (Nepal time), zero-filled.
+ * Postgres filled the days with generate_series; MySQL builds them with a recursive CTE.
+ */
 export async function getDaily(days = 14): Promise<DailyRow[]> {
   const q = await sql();
   const rows = await q`
-    WITH series AS (
-      SELECT generate_series(
-        (now() AT TIME ZONE 'Asia/Kathmandu')::date - ${days - 1}::int,
-        (now() AT TIME ZONE 'Asia/Kathmandu')::date,
-        interval '1 day')::date AS day
+    WITH RECURSIVE series AS (
+      SELECT DATE_SUB(${q.unsafe(nepalToday())}, INTERVAL ${days - 1} DAY) AS day
+      UNION ALL
+      SELECT day + INTERVAL 1 DAY FROM series WHERE day < ${q.unsafe(nepalToday())}
     )
-    SELECT to_char(s.day, 'YYYY-MM-DD') AS day, count(DISTINCT e.dkey)::int AS scans
+    SELECT DATE_FORMAT(s.day, '%Y-%m-%d') AS day, COUNT(DISTINCT e.dkey) AS scans
     FROM series s
     LEFT JOIN ${counted(q)} e
-      ON e.event_type = 'scan' AND (e.created_at AT TIME ZONE 'Asia/Kathmandu')::date = s.day
+      ON e.event_type = 'scan' AND DATE(${q.unsafe(inNepal("e.created_at"))}) = s.day
     GROUP BY s.day
     ORDER BY s.day`;
-  return rows as unknown as DailyRow[];
+  return rows.map((r) => ({ day: r.day as string, scans: num(r.scans) }));
 }
 
 export type Activity = { scans: number; storeTaps: number } & Downloads;
+
+const activity = (row: Record<string, unknown> | undefined): Activity => ({
+  scans: num(row?.scans),
+  storeTaps: num(row?.storeTaps),
+  androidDownloads: num(row?.androidDownloads),
+  iosDownloads: num(row?.iosDownloads),
+});
 
 /** Unique phones on one driver's link in a month. */
 export async function getDriverMonthActivity(driverId: string, period: string): Promise<Activity> {
   const q = await sql();
   const [row] = await q`
-    SELECT ${phones(q, SCAN)} AS scans, ${phones(q, TAP)} AS "storeTaps",
-           ${phones(q, PLAY)} AS "androidDownloads", ${phones(q, APPSTORE)} AS "iosDownloads"
+    SELECT ${phones(q, SCAN)} AS scans, ${phones(q, TAP)} AS storeTaps,
+           ${phones(q, PLAY)} AS androidDownloads, ${phones(q, APPSTORE)} AS iosDownloads
     FROM ${counted(q)} e
     WHERE e.driver_id = ${driverId} AND ${monthRange(q, period)}`;
-  return row as unknown as Activity;
+  return activity(row);
 }
 
 export type WeekComparison = { scans: number; scansPrev: number; taps: number; tapsPrev: number };
@@ -305,28 +309,33 @@ export type WeekComparison = { scans: number; scansPrev: number; taps: number; t
 /** Last 7 days vs the 7 days before (unique phones), for the trend badges. */
 export async function getWeekComparison(): Promise<WeekComparison> {
   const q = await sql();
-  const recent = "e.created_at >= now() - interval '7 days'";
-  const earlier = "e.created_at < now() - interval '7 days'";
+  const recent = "e.created_at >= UTC_TIMESTAMP() - INTERVAL 7 DAY";
+  const earlier = "e.created_at <  UTC_TIMESTAMP() - INTERVAL 7 DAY";
   const [row] = await q`
     SELECT
       ${phones(q, `${SCAN} AND ${recent}`)}  AS scans,
-      ${phones(q, `${SCAN} AND ${earlier}`)} AS "scansPrev",
+      ${phones(q, `${SCAN} AND ${earlier}`)} AS scansPrev,
       ${phones(q, `${TAP} AND ${recent}`)}   AS taps,
-      ${phones(q, `${TAP} AND ${earlier}`)}  AS "tapsPrev"
+      ${phones(q, `${TAP} AND ${earlier}`)}  AS tapsPrev
     FROM ${counted(q)} e
-    WHERE e.created_at >= now() - interval '14 days'`;
-  return row as unknown as WeekComparison;
+    WHERE e.created_at >= UTC_TIMESTAMP() - INTERVAL 14 DAY`;
+  return {
+    scans: num(row?.scans),
+    scansPrev: num(row?.scansPrev),
+    taps: num(row?.taps),
+    tapsPrev: num(row?.tapsPrev),
+  };
 }
 
 /** Unique phones across all drivers for a month (Nepal time). */
 export async function getMonthActivity(period: string): Promise<Activity> {
   const q = await sql();
   const [row] = await q`
-    SELECT ${phones(q, SCAN)} AS scans, ${phones(q, TAP)} AS "storeTaps",
-           ${phones(q, PLAY)} AS "androidDownloads", ${phones(q, APPSTORE)} AS "iosDownloads"
+    SELECT ${phones(q, SCAN)} AS scans, ${phones(q, TAP)} AS storeTaps,
+           ${phones(q, PLAY)} AS androidDownloads, ${phones(q, APPSTORE)} AS iosDownloads
     FROM ${counted(q)} e
     WHERE ${monthRange(q, period)}`;
-  return row as unknown as Activity;
+  return activity(row);
 }
 
 export type ActivityRow = {
@@ -342,8 +351,8 @@ export type ActivityRow = {
 export async function getRecentActivity(limit = 8): Promise<ActivityRow[]> {
   const q = await sql();
   const rows = await q`
-    SELECT c.id, c.driver_id AS "driverId", d.name AS "driverName", c.event_type AS "eventType",
-           c.platform, c.store, c.created_at AS "createdAt"
+    SELECT c.id, c.driver_id AS driverId, d.name AS driverName, c.event_type AS eventType,
+           c.platform, c.store, c.created_at AS createdAt
     FROM referral_clicks c
     LEFT JOIN drivers d ON d.id = c.driver_id
     ORDER BY c.created_at DESC
@@ -355,9 +364,14 @@ export async function getRecentActivity(limit = 8): Promise<ActivityRow[]> {
 export async function getDownloadsByDriver(period: string | null): Promise<Map<string, Downloads>> {
   const q = await sql();
   const rows = await q`
-    SELECT e.driver_id, ${phones(q, PLAY)} AS "androidDownloads", ${phones(q, APPSTORE)} AS "iosDownloads"
+    SELECT e.driver_id AS driverId, ${phones(q, PLAY)} AS androidDownloads, ${phones(q, APPSTORE)} AS iosDownloads
     FROM ${counted(q)} e
     WHERE e.event_type = 'store_click' ${period ? q`AND ${monthRange(q, period)}` : q``}
     GROUP BY e.driver_id`;
-  return new Map(rows.map((r) => [r.driver_id as string, { androidDownloads: r.androidDownloads, iosDownloads: r.iosDownloads }]));
+  return new Map(
+    rows.map((r) => [
+      r.driverId as string,
+      { androidDownloads: num(r.androidDownloads), iosDownloads: num(r.iosDownloads) },
+    ]),
+  );
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { sql } from "../db";
+import { asJson } from "../mysql";
 import { getSiteContent } from "../site-content";
 import { SITE_IMAGE_SLOTS, type SiteImage } from "../site-images";
 import { BLOCKS, type BlockData, type BlockKey } from "./blocks";
@@ -24,13 +25,13 @@ function fill<T>(value: T, tokens: Record<string, string>): T {
 export async function readBlock<K extends BlockKey>(key: K): Promise<BlockData<K>> {
   const def = BLOCKS[key];
   const q = await sql();
-  const [row] = await q`SELECT data FROM content_blocks WHERE key = ${key}`;
+  const [row] = await q`SELECT \`data\` FROM content_blocks WHERE \`key\` = ${key}`;
   if (!row) {
-    await q`INSERT INTO content_blocks (key, data) VALUES (${key}, ${q.json(def.defaults as never)}) ON CONFLICT (key) DO NOTHING`;
+    await q`INSERT IGNORE INTO content_blocks (\`key\`, \`data\`) VALUES (${key}, ${q.json(def.defaults as never)})`;
     return def.defaults as BlockData<K>;
   }
   // New fields added in code get their starting value
-  return { ...(def.defaults as object), ...(row.data as object) } as BlockData<K>;
+  return { ...(def.defaults as object), ...asJson<object>(row.data, {}) } as BlockData<K>;
 }
 
 /** Block content for a public page, with placeholders filled (cached until an admin saves). */
@@ -61,8 +62,8 @@ export async function getBlock<K extends BlockKey>(key: K): Promise<BlockData<K>
 export async function saveBlock(key: BlockKey, data: unknown): Promise<void> {
   const q = await sql();
   await q`
-    INSERT INTO content_blocks (key, data, updated_at) VALUES (${key}, ${q.json(data as never)}, now())
-    ON CONFLICT (key) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`;
+    INSERT INTO content_blocks (\`key\`, \`data\`, updated_at) VALUES (${key}, ${q.json(data as never)}, UTC_TIMESTAMP())
+    ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`), updated_at = UTC_TIMESTAMP()`;
 }
 
 // ---- Website images by slot (for image fields) ----

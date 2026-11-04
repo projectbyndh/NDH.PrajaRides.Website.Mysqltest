@@ -2,14 +2,12 @@
 // first view of an image. Requests every website image and photo (large and thumbnail) from the
 // running site, four at a time.
 //
-//   node --env-file=.env.production scripts/warm-cache.mjs [http://127.0.0.1:3000]
-import postgres from "postgres";
+//   node scripts/warm-cache.mjs [http://127.0.0.1:3000]
+import { connect, readEnvFile } from "./_db.mjs";
 
 const base = (process.argv[2] || "http://127.0.0.1:3000").replace(/\/$/, "");
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set");
-const url = new URL(process.env.DATABASE_URL);
-url.searchParams.delete("channel_binding");
-const sql = postgres(url.toString(), { max: 1, onnotice: () => {} });
+const env = { ...readEnvFile(new URL("../.env.production", import.meta.url)), ...readEnvFile(new URL("../.env", import.meta.url)), ...process.env };
+const sql = await connect(env);
 
 const slots = await sql`SELECT slot FROM site_images`;
 const photos = await sql`SELECT id FROM photos`;

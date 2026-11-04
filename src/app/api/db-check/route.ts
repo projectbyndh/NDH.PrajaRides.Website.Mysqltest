@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { safeEqual } from "@/lib/auth";
 import { pingDatabase } from "@/lib/db";
+import { connectionSettings } from "@/lib/mysql";
 
 // Why the database is not answering: GET /api/db-check. The uptime check (/api/health) reports only
 // ok/failed because it is public; this one names the error, so it is not. It is reachable from the
@@ -32,25 +33,29 @@ function allowed(request: Request): boolean {
   return !!expected && !!given && safeEqual(given, expected);
 }
 
-/** What to do about the error, by the code postgres.js / PostgreSQL reports. */
+/** What to do about the error, by the code mysql2 / MySQL reports. */
 function advice(code: string): string {
   switch (code) {
     case "CONNECT_TIMEOUT":
     case "ETIMEDOUT":
-      return "The database host accepted no connection and sent no refusal: packets are being dropped. Open port 5432 to this server's IP on the database host's firewall, and set listen_addresses = '*' in postgresql.conf plus a line for this IP in pg_hba.conf.";
+      return "The database host accepted no connection and sent no refusal: packets are being dropped. Open port 3306 to this server's IP on the database host's firewall. On shared hosting that is the Remote MySQL page, which needs this server's IP allow-listed.";
     case "ECONNREFUSED":
-      return "The host answered but nothing is listening on that port: PostgreSQL is stopped, or is listening on localhost only (listen_addresses in postgresql.conf).";
+      return "The host answered but nothing is listening on that port: MySQL is stopped, or is bound to localhost only (bind-address in my.cnf).";
     case "ENOTFOUND":
     case "EAI_AGAIN":
-      return "The host name in DATABASE_URL does not resolve. Check the spelling, or use the IP address.";
-    case "28P01":
-      return "The password in DATABASE_URL is wrong. Special characters must be URL-encoded (@ → %40, # → %23).";
-    case "28000":
-      return "The database rejected this user or this client IP: add a line for it in pg_hba.conf, then reload PostgreSQL.";
-    case "3D000":
-      return "That database name does not exist on the server.";
-    case "53300":
-      return "The database is out of connection slots (max_connections). Other clients are holding them.";
+      return "The host name in MYSQL_HOST does not resolve. Check the spelling, or use the IP address.";
+    case "ER_ACCESS_DENIED_ERROR":
+      return "MySQL refused the user and password, OR refuses connections from this machine's IP. Both report the same error: check MYSQL_PASSWORD, and that this server's IP is allow-listed for the database (Remote MySQL on shared hosting). The error message names the IP MySQL saw.";
+    case "ER_HOST_NOT_PRIVILEGED":
+      return "MySQL will not accept connections from this machine's address at all: allow-list it for the database (Remote MySQL on shared hosting).";
+    case "ER_BAD_DB_ERROR":
+      return "That database name does not exist on the server. On shared hosting the name is prefixed, e.g. u123456_name.";
+    case "ER_DBACCESS_DENIED_ERROR":
+      return "The user exists but has no rights on that database: grant them in the hosting panel.";
+    case "ER_CON_COUNT_ERROR":
+      return "The server is out of connection slots (max_connections). Other clients are holding them.";
+    case "PROTOCOL_CONNECTION_LOST":
+      return "The server closed the connection. It may be restarting, or a proxy is dropping idle connections.";
     default:
       return "See the message above.";
   }
@@ -60,10 +65,12 @@ export async function GET(request: Request) {
   await connection();
   if (!allowed(request)) return new Response("Not found\n", { status: 404 });
 
-  const url = process.env.DATABASE_URL;
+  // Host, port and database only: never the user or the password.
+  const c = connectionSettings();
   const lines = [
-    `DATABASE_URL set: ${!!url}`,
-    `sslmode in DATABASE_URL: ${url ? /sslmode=([^&]+)/.exec(url)?.[1] ?? "none" : "-"}`,
+    `MySQL host: ${c.host || "(not set)"}:${c.port}`,
+    `database: ${c.database || "(not set)"}`,
+    `TLS: ${c.ssl ? "on" : "off"}`,
     `connect timeout: ${process.env.DATABASE_CONNECT_TIMEOUT || 8}s`,
   ];
 
