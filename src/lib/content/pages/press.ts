@@ -1,0 +1,130 @@
+import { block, type BlockDef } from "../types";
+
+// Editable sections of the media kit (/press). The long company description is the About story
+// (Website → About). Starting content; the live content is in content_blocks.
+export const PRESS_BLOCKS = {
+  "press.hero": block({
+    key: "press.hero",
+    page: "press",
+    title: "Top of the page",
+    fields: [
+      { key: "seoTitle", label: "Search title", type: "text", max: 70 },
+      { key: "seoDescription", label: "Search description", type: "textarea", max: 300, rows: 2 },
+      { key: "eyebrow", label: "Small label above the title", type: "text", max: 60 },
+      { key: "title", label: "Title", type: "text", max: 120 },
+      { key: "intro", label: "Intro", type: "textarea", max: 400, rows: 3 },
+    ],
+    defaults: {
+      seoTitle: "Media kit",
+      seoDescription: "Logos, company description and press contact for {company}, {city}'s company for rides, rentals, EV charging and more.",
+      eyebrow: "Media kit",
+      title: "Press & brand resources",
+      intro: "Logos, a company description and contacts for journalists, partners and anyone writing about Praja Ride.",
+    },
+  }),
+  "press.about": block({
+    key: "press.about",
+    page: "press",
+    title: "Company description and key facts",
+    fields: [
+      { key: "eyebrow", label: "Small label above the title", type: "text", max: 60 },
+      { key: "title", label: "Title", type: "text", max: 120 },
+      { key: "intro", label: "Intro", type: "text", max: 160 },
+      { key: "shortLabel", label: "Short description: label", type: "text", max: 30 },
+      { key: "short", label: "Short description", type: "textarea", max: 800, rows: 4 },
+      { key: "longLabel", label: "Long description: label (the text is the About story)", type: "text", max: 30 },
+      { key: "factsTitle", label: "Key facts: title", type: "text", max: 60 },
+      {
+        key: "facts",
+        label: "Key facts",
+        type: "list",
+        itemLabel: "Fact",
+        max: 12,
+        item: [
+          { key: "label", label: "Label", type: "text", max: 40 },
+          { key: "value", label: "Value", type: "text", max: 160 },
+        ],
+      },
+      { key: "foundedLabel", label: "Label for the founding year (added after the third fact when set in Website → About)", type: "text", max: 40 },
+    ],
+    defaults: {
+      eyebrow: "About the company",
+      title: "Company description",
+      intro: "Free to use when writing about us.",
+      shortLabel: "Short",
+      short:
+        "{company} is a {city}, Nepal company for everything on wheels: ride sharing (as the official NepCab franchise), vehicle rental, offline booking, vehicle buy & sell, an EV charging station and a driving trial center, across {area}.",
+      longLabel: "Long",
+      factsTitle: "Key facts",
+      facts: [
+        { label: "Company", value: "{company}" },
+        { label: "Ride sharing", value: "Official NepCab franchise, {city}" },
+        { label: "Service area", value: "{area}" },
+        { label: "Office", value: "{address}" },
+        { label: "Ride app", value: "NepCab (Android & iPhone)" },
+      ],
+      foundedLabel: "Founded",
+    },
+  }),
+  "press.brand": block({
+    key: "press.brand",
+    page: "press",
+    title: "Logo and colours",
+    description: "The logo files themselves are part of the site; their captions and the colours are editable here.",
+    fields: [
+      { key: "eyebrow", label: "Small label above the title", type: "text", max: 60 },
+      { key: "title", label: "Title", type: "text", max: 120 },
+      { key: "logoAlt", label: "Logo description (for screen readers)", type: "text", max: 80 },
+      { key: "logoLarge", label: "Large logo: caption", type: "text", max: 60 },
+      { key: "logoSmall", label: "Small logo: caption", type: "text", max: 60 },
+      {
+        key: "colors",
+        label: "Colours",
+        type: "list",
+        itemLabel: "Colour",
+        max: 8,
+        item: [
+          { key: "name", label: "Name", type: "text", max: 40 },
+          { key: "hex", label: "Hex code, e.g. #01153E", type: "text", max: 7 },
+        ],
+      },
+      { key: "typeEyebrow", label: "Typography: label", type: "text", max: 40 },
+      { key: "typeName", label: "Typography: font name", type: "text", max: 60 },
+      { key: "typeText", label: "Typography: text", type: "text", max: 120 },
+      { key: "note", label: "Note under the colours", type: "textarea", max: 400, rows: 2 },
+    ],
+    defaults: {
+      eyebrow: "Brand",
+      title: "Logo and colours",
+      logoAlt: "Praja Ride emblem",
+      logoLarge: "Emblem · 512 px PNG",
+      logoSmall: "Emblem · 192 px PNG",
+      colors: [
+        { name: "Navy", hex: "#01153E" },
+        { name: "Chrome yellow", hex: "#FFA700" },
+        { name: "Deep amber", hex: "#9A5B00" },
+        { name: "Mist", hex: "#EBF1FC" },
+      ],
+      typeEyebrow: "Typography",
+      typeName: "Plus Jakarta Sans",
+      typeText: "For titles and text",
+      note: "The NepCab name and logo belong to NepCab. For approved NepCab assets, please contact us and we'll put you in touch.",
+    },
+  }),
+  "press.contact": block({
+    key: "press.contact",
+    page: "press",
+    title: "Press contact",
+    description: "The email and phone come from Website → Contact details.",
+    fields: [
+      { key: "title", label: "Title", type: "text", max: 120 },
+      { key: "text", label: "Text", type: "text", max: 200 },
+      { key: "emailSubject", label: "Email subject", type: "text", max: 80 },
+    ],
+    defaults: {
+      title: "Press & partnership enquiries",
+      text: "For interviews, photos or information, contact our office.",
+      emailSubject: "Press enquiry",
+    },
+  }),
+} satisfies Record<string, BlockDef<unknown>>;

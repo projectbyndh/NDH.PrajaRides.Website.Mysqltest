@@ -1,0 +1,236 @@
+import { faq, heading, iconCard, step } from "../fields";
+import { block, type BlockDef } from "../types";
+
+// Editable sections of the NepCab app page (/nepcab) and the referral landing page (/download).
+// Starting content; the live content is in content_blocks.
+
+export const NEPCAB_BLOCKS = {
+  "nepcab.hero": block({
+    key: "nepcab.hero",
+    page: "nepcab",
+    title: "Top of the page",
+    fields: [
+      { key: "seoTitle", label: "Browser tab / Google title", type: "text", max: 70 },
+      { key: "seoDescription", label: "Google description", type: "textarea", max: 300, rows: 2 },
+      { key: "tagline", label: "Tagline under NEPCAB", type: "text", max: 40 },
+      { key: "titleLines", label: "Headline", type: "lines", max: 3, hint: "One line per row." },
+      { key: "intro", label: "Paragraph", type: "textarea", max: 400 },
+      { key: "areaBadge", label: "Area badge", type: "text", max: 80 },
+      { key: "offlinePrompt", label: "Offline link: question", type: "text", max: 60 },
+      { key: "offlineLabel", label: "Offline link: text", type: "text", max: 60 },
+    ],
+    defaults: {
+      seoTitle: "NepCab rides in Butwal – Bhairahawa",
+      seoDescription: "NepCab — यात्राको साथी. Rides, pool, intercity, bidding, rentals and electric across {area}, operated by {company}.",
+      tagline: "यात्राको साथी",
+      titleLines: ["Book your ride across {area}"],
+      intro: "NepCab is a Nepali ride-hailing app, brought to {city} by {company}, its official franchise. One app for rides, pools, intercity trips and more.",
+      areaBadge: "Now serving {area}",
+      offlinePrompt: "No smartphone?",
+      offlineLabel: "Book by phone or WhatsApp",
+    },
+  }),
+  "nepcab.book": block({
+    key: "nepcab.book",
+    page: "nepcab",
+    title: "Book a ride card (top of the page)",
+    fields: [
+      { key: "title", label: "Title", type: "text", max: 40 },
+      { key: "badge", label: "Badge next to the title", type: "text", max: 30 },
+      { key: "submitLabel", label: "Button", type: "text", max: 40 },
+      { key: "note", label: "Line under the button", type: "text", max: 120 },
+      { key: "doneTitle", label: "After sending: title", type: "text", max: 60 },
+      { key: "doneText", label: "After sending: text", type: "textarea", max: 300, rows: 2 },
+      { key: "whatsappLabel", label: "After sending: WhatsApp button", type: "text", max: 40 },
+    ],
+    defaults: {
+      title: "Book a ride",
+      badge: "No app needed",
+      submitLabel: "Request ride",
+      note: "Our booking desk calls you to confirm the driver and fare. Pay the driver directly.",
+      doneTitle: "Ride requested",
+      doneText: "Our {city} booking desk will call you in a few minutes to confirm your driver and fare.",
+      whatsappLabel: "Also send on WhatsApp",
+    },
+  }),
+  "nepcab.services": block({
+    key: "nepcab.services",
+    page: "nepcab",
+    title: "NepCab services",
+    fields: [...heading, { key: "intro", label: "Intro", type: "textarea", max: 300 }, { key: "items", label: "Services", type: "list", itemLabel: "Service", max: 12, item: iconCard }],
+    defaults: {
+      eyebrow: "Services",
+      title: "Everything you need, in one app",
+      intro: "The NepCab services available in {area}.",
+      items: [
+        { icon: "car", title: "Rides", text: "Book an everyday ride from your phone, wherever you need to go in town." },
+        { icon: "users", title: "Pool", text: "Share a ride with others heading the same way." },
+        { icon: "route", title: "Intercity", text: "Travel between cities, starting from Butwal and Bhairahawa." },
+        { icon: "gavel", title: "Bidding", text: "Offer your fare and choose the driver who accepts it." },
+        { icon: "key", title: "Rentals", text: "Hire a vehicle for longer trips and errands." },
+        { icon: "bolt", title: "Electric", text: "Choose a cleaner, quieter ride in an electric vehicle." },
+      ],
+    },
+  }),
+  "nepcab.booking": block({
+    key: "nepcab.booking",
+    page: "nepcab",
+    title: "How to book",
+    fields: [
+      ...heading,
+      { key: "steps", label: "Steps", type: "list", itemLabel: "Step", max: 8, item: step },
+      { key: "cardTitle", label: "Download card: title", type: "text", max: 60 },
+      { key: "cardText", label: "Download card: text", type: "text", max: 160 },
+    ],
+    defaults: {
+      eyebrow: "How to book",
+      title: "From download to drop-off",
+      steps: [
+        { title: "Download NepCab", text: "Use the buttons on this page, or scan the QR code on any NepCab vehicle." },
+        { title: "Sign up with your mobile number", text: "It only takes a minute." },
+        { title: "Choose a service", text: "Ride, pool, intercity, bidding, rentals or electric." },
+        { title: "Set pickup and destination", text: "Confirm your booking and your driver partner is on the way." },
+      ],
+      cardTitle: "Get NepCab",
+      cardText: "Download it here, or send the link to a friend.",
+    },
+  }),
+  "nepcab.offline": block({
+    key: "nepcab.offline",
+    page: "nepcab",
+    title: "Book without the app",
+    fields: [
+      ...heading,
+      { key: "intro", label: "Intro", type: "textarea", max: 300 },
+      {
+        key: "items",
+        label: "Ways to book",
+        type: "list",
+        itemLabel: "Way",
+        max: 6,
+        hint: "Links can use {phone}, {tollFree}, {whatsapp} (pre-filled booking chat) and {map}.",
+        item: [
+          ...iconCard,
+          { key: "cta", label: "Link text", type: "text", max: 40 },
+          { key: "link", label: "Link", type: "url" },
+        ],
+      },
+      { key: "note", label: "Note under the cards", type: "text", max: 160 },
+      { key: "noteLink", label: "Note: link text", type: "text", max: 100 },
+      { key: "noteHref", label: "Note: link", type: "url" },
+    ],
+    defaults: {
+      eyebrow: "Book without the app",
+      title: "No app? Book by phone, WhatsApp or in person",
+      intro: "Our booking desk arranges your NepCab ride for you. Tell us where and when, and we take care of the rest.",
+      items: [
+        { icon: "phone", title: "Call us", text: "Tell us your pickup, drop-off and time. We book the ride for you.", cta: "Call {phone}", link: "tel:{phone}" },
+        { icon: "chat", title: "WhatsApp us", text: "Send your pickup, drop-off and time; the message is ready for you.", cta: "Open WhatsApp", link: "{whatsapp}" },
+        { icon: "phone-call", title: "Toll free", text: "Call our toll-free line to book.", cta: "{tollFree}", link: "tel:{tollFree}" },
+        { icon: "store", title: "Walk in", text: "Visit our office at {address} and we book it on the spot.", cta: "Get directions", link: "{map}" },
+      ],
+      note: "Need a rental, an EV charging slot or trial practice instead?",
+      noteLink: "Our booking desk handles every Praja Ride service",
+      noteHref: "/services/offline-booking",
+    },
+  }),
+  "nepcab.sticker": block({
+    key: "nepcab.sticker",
+    page: "nepcab",
+    title: "QR stickers",
+    fields: [
+      ...heading,
+      { key: "intro", label: "Intro", type: "textarea", max: 300 },
+      { key: "ridersTitle", label: "Riders card: title", type: "text", max: 40 },
+      { key: "ridersText", label: "Riders card: text", type: "text", max: 160 },
+      { key: "driversTitle", label: "Drivers card: title", type: "text", max: 40 },
+      { key: "driversText", label: "Drivers card: text", type: "text", max: 160 },
+      { key: "driversLink", label: "Drivers card: link text", type: "text", max: 40 },
+    ],
+    defaults: {
+      eyebrow: "Spot the sticker",
+      title: "Every NepCab vehicle carries a QR code",
+      intro: "Scan it with your phone camera to download the app. One code works on Android and iPhone.",
+      ridersTitle: "For riders",
+      ridersText: "Scan, install, and book your first ride in minutes.",
+      driversTitle: "For drivers",
+      driversText: "Partners earn monthly rewards for riders who join through their code.",
+      driversLink: "Drive with us",
+    },
+  }),
+  "nepcab.faq": block({
+    key: "nepcab.faq",
+    page: "nepcab",
+    title: "Questions",
+    fields: [...heading, { key: "items", label: "Questions", type: "list", itemLabel: "Question", max: 15, item: faq }],
+    defaults: {
+      eyebrow: "FAQ",
+      title: "NepCab questions",
+      items: [
+        { q: "Is the app free?", a: "Yes. Downloading NepCab is free." },
+        { q: "Where is NepCab available?", a: "Around {city} the service covers {area}. NepCab also serves Nepalgunj." },
+        { q: "Who runs NepCab in Butwal?", a: "{company} is the official NepCab franchise for {city}." },
+        { q: "How do I get help with a ride?", a: "Call or WhatsApp {phone}, or call the toll-free number {tollFree}." },
+      ],
+    },
+  }),
+  "download.page": block({
+    key: "download.page",
+    page: "nepcab",
+    title: "Download page (where driver QR codes lead)",
+    description: "The page riders see after scanning a driver's QR code or opening a referral link.",
+    fields: [
+      { key: "tagline", label: "Tagline under NEPCAB", type: "text", max: 40 },
+      { key: "byLine", label: "Line under the tagline", type: "text", max: 80 },
+      { key: "referredLabel", label: "Referral note", type: "text", max: 40, hint: "Followed by the driver's name." },
+      { key: "title", label: "Card title", type: "text", max: 60 },
+      { key: "text", label: "Card text", type: "text", max: 160 },
+      { key: "badges", label: "Badges", type: "list", itemLabel: "Badge", max: 3, item: [{ key: "icon", label: "Icon", type: "icon" }, { key: "label", label: "Text", type: "text", max: 30 }] },
+      { key: "followText", label: "Follow line", type: "text", max: 60 },
+    ],
+    defaults: {
+      tagline: "यात्राको साथी",
+      byLine: "{city} · By {company}",
+      referredLabel: "Referred by Driver:",
+      title: "Get the NepCab app",
+      text: "Book safe, affordable rides around {city} in seconds.",
+      badges: [
+        { icon: "shield", label: "Verified drivers" },
+        { icon: "wallet", label: "Fair fares" },
+        { icon: "clock-3", label: "Rides 24/7" },
+      ],
+      followText: "Follow us @nepcabbutwal",
+    },
+  }),
+  "download.share": block({
+    key: "download.share",
+    page: "nepcab",
+    title: "Share card (download and NepCab pages)",
+    fields: [
+      { key: "desktopTitle", label: "On a computer: title", type: "text", max: 60 },
+      { key: "desktopText", label: "On a computer: text", type: "text", max: 120 },
+      { key: "title", label: "On a phone: title", type: "text", max: 60 },
+      { key: "text", label: "On a phone: text", type: "text", max: 120 },
+      { key: "shareLabel", label: "Share button", type: "text", max: 30 },
+      { key: "fullscreenLabel", label: "Full screen button", type: "text", max: 30 },
+      { key: "shareMessage", label: "Message sent with the link", type: "text", max: 160 },
+      { key: "footer", label: "Small line at the bottom", type: "text", max: 80 },
+    ],
+    defaults: {
+      desktopTitle: "On a computer? Scan with your phone",
+      desktopText: "Point your phone camera at the code to install the app.",
+      title: "Share NepCab with a friend",
+      text: "Let them scan this QR, or send them the link.",
+      shareLabel: "Share link",
+      fullscreenLabel: "Full screen",
+      shareMessage: "Download the NepCab app — rides around {city}:",
+      footer: "NepCab {city} · By {company}",
+    },
+  }),
+} satisfies Record<string, BlockDef<unknown>>;
+
+/** Text of the share card (passed from the page to the client component). */
+export type ShareText = (typeof NEPCAB_BLOCKS)["download.share"]["defaults"];
+
+/** Text of the "Book a ride" card (passed from the page to the client form). */
+export type BookRideText = (typeof NEPCAB_BLOCKS)["nepcab.book"]["defaults"];

@@ -1,0 +1,514 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-brand: #f5b81c;
+  --color-brand-light: #fde58a;
+  --color-brand-dark: #d99a07;
+  --color-ink: #161e33;
+  --color-pin: #e0322f;
+  --color-silver: #c9ced6;
+  --font-sans: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
+  --font-deva: var(--font-mukta), var(--font-poppins), sans-serif;
+
+  /* ---------- Praja Ride website: type ----------
+   * Poppins for headings, labels and numbers; Open Sans for body text. */
+  --font-display: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-label: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* ---------- Praja Ride website: colour ----------
+   * Brand: navy + chrome amber. Amber surfaces always carry navy text.
+   * Light sections are white; "paper" is a neutral grey for small fills (chips, tab bars,
+   * form fields, inner panels). Dark sections sit on "night" (deeper than navy). */
+  --color-night: #020a1f;
+  --color-night-2: #06132f;
+  --color-navy: #01153e;
+  --color-navy-soft: #0a2a6b;
+  --color-accent: #ffa700;
+  --color-accent-bright: #ffbd3d;
+  --color-accent-deep: #8f5400;
+  --color-accent-soft: #fff1d1;
+  --color-paper: #f4f6f9;
+  --color-sand: #eceff4;
+  --color-line: #e4e8ee;
+  --color-mist: #edf2f9;
+
+  /* Elevation: one soft scale instead of ad-hoc shadows. */
+  --shadow-soft: 0 1px 2px rgb(2 10 31 / 0.04), 0 8px 24px -12px rgb(2 10 31 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(2 10 31 / 0.04), 0 24px 48px -20px rgb(2 10 31 / 0.28);
+
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Yellow text and icons read well on navy but are too faint on light surfaces, so they take the
+ * colour of the nearest surface: deep amber on light, chrome yellow on navy. */
+:root,
+.bg-white,
+.bg-mist,
+.bg-sand,
+.bg-paper,
+.bg-accent-soft {
+  --accent-ink: var(--color-accent-deep);
+}
+.bg-navy,
+.bg-night,
+.bg-night-2,
+.bg-navy-grain,
+.bg-navy-soft,
+.bg-night\/80,
+.bg-night\/90,
+.bg-navy\/70,
+.bg-navy\/90,
+.bg-navy\/95 {
+  --accent-ink: var(--color-accent);
+}
+/* On amber surfaces, "accent" text and emphasised words turn navy. */
+.bg-accent,
+.bg-accent-gradient {
+  --accent-ink: var(--color-navy);
+}
+/* Inside the utilities layer, so hover/focus variants (e.g. group-hover:text-navy) still win. */
+@layer utilities {
+  .text-accent {
+    color: var(--accent-ink);
+  }
+}
+
+body {
+  background: #fff;
+  color: var(--color-ink);
+}
+
+/* ---------- Praja Ride website: type scale ----------
+ * Plus Jakarta Sans headings in a clear step scale; Inter body at 16px / 1.65.
+ *   display  home hero only      800
+ *   h1       inner page titles   800
+ *   h2       section titles      800
+ *   h3       card titles         750
+ *   eyebrow  label above titles  700, uppercase, amber
+ * Fluid sizes scale smoothly from a 360px phone to a wide desktop. */
+.type-display {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.3rem + 2.9vw, 3.6rem);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  font-weight: 800;
+  /* Fill the line before wrapping (headings elsewhere use balance) */
+  text-wrap-style: auto;
+}
+.type-h1 {
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 1.35rem + 2.2vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  font-weight: 800;
+}
+.type-h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 1.25rem + 1.4vw, 2.35rem);
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+  font-weight: 800;
+}
+.type-h3 {
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 1rem + 0.3vw, 1.2rem);
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  font-weight: 750;
+}
+.type-lead {
+  font-size: clamp(1.05rem, 0.99rem + 0.3vw, 1.2rem);
+  line-height: 1.7;
+}
+.type-eyebrow {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+/* Small numerals and labels set in the heading family. */
+.font-label {
+  font-family: var(--font-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.tabular { font-variant-numeric: tabular-nums; }
+h1, h2, h3 { text-wrap: balance; }
+/* Keyboard focus: one amber ring for every control on the website (mouse clicks show none). */
+.theme-praja :is(a, button, summary, [role="tab"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+/* Clickable things look clickable (Tailwind v4 resets buttons to the default cursor). */
+.theme-praja :is(button:not(:disabled), summary, [role="tab"], label[for]) {
+  cursor: pointer;
+}
+/* Anchor jumps and keyboard focus land below the sticky header, never under it. */
+html {
+  scroll-padding-top: 6rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+
+/* No underlines anywhere on the website: links are marked by colour, weight and arrows. */
+.theme-praja a,
+.theme-praja a:hover { text-decoration: none; }
+/* Website headings default to the display face; zero-specificity so .type-* classes win. */
+:where(.theme-praja) :where(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+p { text-wrap: pretty; }
+
+/* ---------- Praja Ride website: theme utilities ---------- */
+.text-accent-gradient {
+  background: linear-gradient(100deg, #ffa700 0%, #ffd27a 40%, #ffffff 70%, #ffa700 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.bg-accent-gradient {
+  background: linear-gradient(120deg, #ff9500 0%, #ffa700 45%, #ffc24d 100%);
+}
+/* Dark sections: night navy with a faint cool lift top-left (no coloured haze). */
+.bg-navy-grain {
+  background-color: var(--color-night);
+  background-image: radial-gradient(60% 70% at 0% 0%, rgb(30 80 200 / 0.12), transparent 70%);
+}
+/* Light page headers: pure white (the faint street grid gives them texture). */
+.bg-hero-light {
+  background-color: #fff;
+}
+/* Faint street-grid texture in ink, for light heroes. */
+.bg-grid-ink {
+  background-image:
+    linear-gradient(rgb(22 30 51 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(22 30 51 / 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at 70% 30%, #000 15%, transparent 70%);
+}
+/* Small navy dot grid: a quiet decorative corner next to photos. */
+.bg-dots {
+  background-image: radial-gradient(rgb(1 21 62 / 0.16) 1.5px, transparent 1.5px);
+  background-size: 14px 14px;
+}
+/* Faint street-grid texture for hero sections. */
+.bg-grid-faint {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at 70% 40%, #000 20%, transparent 75%);
+}
+/* Film grain over dark sections: breaks up flat gradients (premium print feel). */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* Hairline card: the default light surface. */
+.surface-card {
+  background: #fff;
+  border: 1px solid var(--color-line);
+  box-shadow: var(--shadow-soft);
+}
+/* Glass panel on dark sections. */
+.glass {
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.1);
+}
+/* Icon cards (icon, title, text): on phones the icon sits beside the text, keeping long card lists short. */
+@media (max-width: 639.98px) {
+  .icon-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 1rem;
+    align-items: start;
+    padding: 1.25rem;
+  }
+  .icon-card > :first-child { grid-row: span 3; }
+  .icon-card > :not(:first-child) { grid-column: 2; margin-top: 0; }
+  .icon-card > :nth-child(3) { margin-top: 0.375rem; }
+}
+/* Home hero showcase: staged entrance, slow zoom on the current slide, turning badge ring. */
+@keyframes pr-hero-photo { from { opacity: 0; transform: translateY(24px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes pr-hero-pop { 0% { opacity: 0; transform: scale(0.6) rotate(-30deg); } 70% { opacity: 1; transform: scale(1.06) rotate(4deg); } 100% { opacity: 1; transform: none; } }
+@keyframes pr-hero-right { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+@keyframes pr-hero-up { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes pr-hero-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pr-kenburns { from { transform: scale(1.12); } to { transform: scale(1); } }
+.hero-in-photo { animation: pr-hero-photo 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+/* The photo is revealed with a wipe from the bottom while it settles from a slight zoom. */
+@keyframes pr-hero-wipe { from { clip-path: inset(100% 0 0 0); transform: scale(1.06); } to { clip-path: inset(0 0 0 0); transform: none; } }
+@keyframes pr-hero-grow { from { opacity: 0; transform: scale(0.2); } to { opacity: 1; transform: none; } }
+.hero-in-wipe { animation: pr-hero-wipe 1.3s cubic-bezier(0.65, 0, 0.35, 1) 150ms both; }
+.hero-in-grow { animation: pr-hero-grow 1s cubic-bezier(0.22, 1, 0.36, 1) both; transform-origin: bottom right; }
+.hero-in-pop { animation: pr-hero-pop 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.hero-in-right { animation: pr-hero-right 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.hero-in-up { animation: pr-hero-up 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.hero-in { animation: pr-hero-in 1.2s ease both; }
+.hero-kenburns { animation: pr-kenburns 6s ease-out both; }
+.animate-spin-ring { animation: pr-spin 18s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .hero-in-photo, .hero-in-wipe, .hero-in-grow, .hero-in-pop, .hero-in-right, .hero-in-up, .hero-in, .hero-kenburns, .animate-spin-ring { animation: none !important; }
+}
+/* Touch sizes (phones and tablets): text links and small controls get a finger-sized tap area
+   (about 44px) without changing how they look. Desktop pointers keep the compact sizes. */
+@media (pointer: coarse), (max-width: 1023px) {
+  .theme-praja :is(main, footer) a.inline-flex,
+  .theme-praja :is(main, footer) button.inline-flex { min-height: 2.75rem; }
+  .theme-praja footer li > a,
+  .theme-praja footer .legal-links a { display: inline-block; padding-block: 0.6rem; }
+  .theme-praja nav[aria-label="Breadcrumb"] a { padding-block: 0.75rem; }
+  .theme-praja main input[type="checkbox"] { width: 1.375rem; height: 1.375rem; }
+}
+/* ---------- Animations ---------- */
+@keyframes pr-fade-up {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pr-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pr-float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(0.6deg); }
+}
+@keyframes pr-shimmer {
+  to { background-position: 200% center; }
+}
+@keyframes pr-pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(255, 167, 0, 0.5); }
+  100% { box-shadow: 0 0 0 18px rgba(255, 167, 0, 0); }
+}
+
+.animate-fade-up { animation: pr-fade-up 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-fade-in { animation: pr-fade-in 1s ease both; }
+.animate-float { animation: pr-float 6s ease-in-out infinite; }
+@keyframes pr-float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float-slow { animation: pr-float-slow 7s ease-in-out infinite; }
+.animate-shimmer { animation: pr-shimmer 6s linear infinite; }
+.animate-pulse-ring { animation: pr-pulse-ring 2.2s ease-out infinite; }
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-500 { animation-delay: 0.5s; }
+
+/* Scroll reveal: only hidden once JS is confirmed running, so content never stays invisible. */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.js [data-reveal].is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up, .animate-fade-in, .animate-float, .animate-float-slow, .animate-shimmer, .animate-pulse-ring { animation: none !important; }
+  .js [data-reveal] { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
+
+/* Praja Ride site: form fields a touch taller and warmer than the admin's (shared Field component). */
+.theme-praja :is(input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), select, textarea, [data-select]) {
+  min-height: 3.25rem;
+  border-radius: 0.9rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  background-color: #fff;
+  box-shadow: none;
+}
+.theme-praja :is(input, select, textarea, [data-select]):not([aria-invalid="true"]) {
+  border-color: var(--color-line);
+}
+.theme-praja :is(input, select, textarea, [data-select]):focus {
+  background-color: #fff;
+}
+/* Praja Ride site: yellow focus states for form fields (admin keeps NepCab yellow). */
+.theme-praja :is(input, select, textarea, [data-select]):focus,
+.theme-praja [data-select][aria-expanded="true"] {
+  border-color: var(--color-accent) !important;
+  --tw-ring-color: rgb(255 167 0 / 0.3) !important;
+}
+.theme-praja ::selection {
+  background: rgb(255 167 0 / 0.3);
+}
+
+@keyframes pr-spin { to { transform: rotate(360deg); } }
+.animate-spin-slow { animation: pr-spin 60s linear infinite; }
+.animate-spin-slower { animation: pr-spin 90s linear infinite reverse; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin-slow, .animate-spin-slower { animation: none !important; }
+}
+
+/* ---------- Word-by-word text reveal ---------- */
+.split-line { display: inline; }
+.split-word {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  padding-bottom: 0.08em; /* room for descenders inside the mask */
+  margin-bottom: -0.08em;
+}
+.split-word > span {
+  display: inline-block;
+  will-change: transform;
+}
+.js [data-split] .split-word > span {
+  transform: translateY(110%);
+  transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--d, 0ms);
+}
+.js [data-split].is-visible .split-word > span { transform: none; }
+/* Heroes (`immediate`): a pure CSS animation, so the headline never waits for JavaScript. */
+@keyframes pr-word-rise { from { transform: translateY(110%); } to { transform: none; } }
+[data-split="now"] .split-word > span,
+.js [data-split="now"] .split-word > span {
+  transform: none;
+  transition: none;
+  animation: pr-word-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--d, 0ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .js [data-split] .split-word > span,
+  [data-split="now"] .split-word > span { transform: none !important; transition: none !important; animation: none !important; }
+}
+
+/* Franchise diagram: yellow dashes flowing along the connectors. */
+@keyframes pr-dash-flow { to { background-position: 28px 0; } }
+.flow-line {
+  background-image: linear-gradient(90deg, var(--color-accent) 50%, transparent 0);
+  background-size: 14px 2px;
+  background-repeat: repeat-x;
+  animation: pr-dash-flow 1.2s linear infinite;
+}
+.flow-line-v {
+  background-image: linear-gradient(180deg, var(--color-accent) 50%, transparent 0);
+  background-size: 2px 14px;
+  background-repeat: repeat-y;
+  animation: pr-dash-flow-v 1.2s linear infinite;
+}
+@keyframes pr-dash-flow-v { to { background-position: 0 28px; } }
+@media (prefers-reduced-motion: reduce) {
+  .flow-line, .flow-line-v { animation: none !important; }
+}
+
+/* ---------- Home: motion ---------- */
+/* Reveal directions (default rises from below). */
+.js [data-reveal="left"] { transform: translateX(-36px); }
+.js [data-reveal="right"] { transform: translateX(36px); }
+.js [data-reveal="zoom"] { transform: scale(0.94); }
+.js [data-reveal].is-visible { transform: none; }
+
+/* Hero glows drifting slowly behind the content. */
+@keyframes pr-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(40px, -30px) scale(1.12); }
+}
+.animate-drift { animation: pr-drift 14s ease-in-out infinite; }
+.animate-drift-slow { animation: pr-drift 20s ease-in-out infinite reverse; }
+
+/* Booking card: a car dot travelling from pickup to drop-off. */
+@keyframes pr-route {
+  0% { top: 0; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { top: calc(100% - 8px); opacity: 0; }
+}
+.animate-route { animation: pr-route 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+
+/* Booking card: services take turns being selected. */
+@keyframes pr-tile {
+  0%, 14% { background-color: rgb(255 167 0 / 0.14); box-shadow: inset 0 0 0 1px rgb(255 167 0 / 0.55); }
+  18%, 100% { background-color: rgb(255 255 255 / 0.04); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08); }
+}
+.animate-tile { animation: pr-tile 9s ease-in-out infinite; }
+
+/* Phone icon ringing. */
+@keyframes pr-ring {
+  0%, 70%, 100% { transform: rotate(0); }
+  74%, 82%, 90% { transform: rotate(-14deg); }
+  78%, 86%, 94% { transform: rotate(14deg); }
+}
+.animate-ring { animation: pr-ring 2.6s ease-in-out infinite; transform-origin: 50% 60%; }
+
+/* Light sweep across primary buttons on hover. */
+.btn-shine { position: relative; overflow: hidden; isolation: isolate; }
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(110deg, transparent 30%, rgb(255 255 255 / 0.35) 50%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.7s ease;
+}
+.btn-shine:hover::after { transform: translateX(120%); }
+
+/* Step connector drawing itself in when the list scrolls into view. */
+.js [data-reveal] .draw-line { transform: scaleY(0); transform-origin: top; transition: transform 1s cubic-bezier(0.22, 1, 0.36, 1) 0.3s; }
+.js [data-reveal].is-visible .draw-line { transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-drift, .animate-drift-slow, .animate-route, .animate-tile, .animate-ring { animation: none !important; }
+  .btn-shine::after { display: none; }
+  .js [data-reveal] .draw-line { transform: none !important; }
+}
+
+/* Phones: card lists become one swipeable row, the next card peeking in from the edge (see Rail).
+   Tablets and up keep their grid. Outside any layer so it beats the grid utilities. */
+@media (max-width: 639.98px) {
+  .rail {
+    display: flex;
+    gap: 0.75rem;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    margin-inline: -1rem;
+    padding: 0.25rem 1rem 0.75rem;
+    scroll-padding-inline: 1rem;
+    scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail > * {
+    flex: 0 0 84%;
+    min-width: 0;
+    scroll-snap-align: start;
+  }
+}
+
+/* Hero headline: each word rises out of a mask, one after another (delay set per word). */
+@keyframes pr-word-up {
+  from { transform: translateY(110%); }
+  to { transform: translateY(0); }
+}
+.hero-word {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  /* room for descenders inside the mask */
+  padding-bottom: 0.12em;
+  margin-bottom: -0.12em;
+}
+.hero-word > span {
+  display: inline-block;
+  animation: pr-word-up 0.9s var(--ease-out-expo) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-word > span { animation: none; }
+}
