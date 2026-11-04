@@ -34,6 +34,19 @@ const nextConfig = {
     // Driver applications carry up to 6 photos, resized to WebP in the browser.
     serverActions: { bodySizeLimit: "4mb" },
   },
+  // Scope hoisting is turned off for the SERVER bundle only.
+  //
+  // Where the native SWC compiler cannot load - a build container whose glibc is older than 2.29,
+  // which is the case on this host - Next falls back to its WebAssembly compiler. Webpack's module
+  // concatenation then cannot work out the final name of a re-exported binding and the build stops:
+  //   Cannot get final name for export 'ImageResponse' of next/dist/server/og/image-response.js
+  // Disabling concatenation removes that step. It costs nothing a visitor can measure: the server
+  // bundle is never downloaded by a browser, only required by Node, so this is bundle size and
+  // startup only - and the client bundle keeps its optimisation.
+  webpack(config, { isServer }) {
+    if (isServer) config.optimization = { ...config.optimization, concatenateModules: false };
+    return config;
+  },
 };
 
 export default nextConfig;

@@ -1,13 +1,22 @@
 import "server-only";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ImageResponse } from "next/og";
 import QRCode from "qrcode";
 import { BRAND } from "./config";
 import { getIdentity } from "./identity";
 
 // Server-rendered QR sticker (PNG). One design for admin downloads, the public /qr page
 // and WhatsApp link previews.
+//
+// ImageResponse is imported at call time, not at the top of the file, because of how it has to be
+// built on some hosts. Where the native SWC compiler cannot load (a build container with glibc
+// older than 2.29), Next falls back to its WebAssembly compiler, and webpack then cannot resolve
+// the re-exported name through next/og:
+//   Cannot get final name for export 'ImageResponse' of next/dist/server/og/image-response.js
+// A call-time import keeps that module out of the statically concatenated graph, so the name never
+// has to be hoisted. Nothing else changes: the module is cached after the first call, and these
+// routes already do async work (fonts, identity) before rendering.
+const imageResponse = async () => (await import("next/og")).ImageResponse;
 
 const INK = "#1f2124";
 const BRAND_YELLOW = "#f5b81c";
@@ -96,6 +105,8 @@ export async function qrImage(driverId: string | null, link: string, variant: Qr
   const pill = driverId ? `Driver: ${driverId}` : link.replace(/^https?:\/\//, "").replace(/\/r$/, "");
   const qr = qrDataUri(link);
   const tagline = await taglineUri();
+
+  const ImageResponse = await imageResponse();
 
   if (variant === "og") {
     // 1200×630 link preview (WhatsApp, Facebook)
