@@ -28,13 +28,15 @@ export async function listContactMessages(): Promise<ContactMessage[]> {
 
 export async function countUnreadMessages(): Promise<number> {
   const q = await sql();
-  const [{ n }] = await q`SELECT count(*) AS n FROM contact_messages WHERE NOT read`;
-  return n;
+  // "read" is a reserved word in MySQL: unquoted it is a syntax error, and because the admin
+  // dashboard awaits every one of its queries together, that one error blanked the whole page.
+  const [{ n }] = await q`SELECT count(*) AS n FROM contact_messages WHERE NOT \`read\``;
+  return Number(n);
 }
 
 export async function setMessageRead(id: string, read: boolean): Promise<void> {
   const q = await sql();
-  await q`UPDATE contact_messages SET read = ${read} WHERE id = ${id}`;
+  await q`UPDATE contact_messages SET \`read\` = ${read} WHERE id = ${id}`;
 }
 
 export async function deleteContactMessage(id: string): Promise<void> {

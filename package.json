@@ -12,7 +12,8 @@
     "seed:demo": "node --env-file=.env.local scripts/seed-demo.mjs",
     "seed:content": "node scripts/seed-content.mjs",
     "warm:cache": "node scripts/warm-cache.mjs",
-    "check:sql": "node --conditions=react-server scripts/_shim-check.ts"
+    "check:sql": "node --conditions=react-server scripts/_shim-check.ts",
+    "check:db": "node --conditions=react-server --import ./scripts/_ts-register.mjs scripts/_query-check.ts"
   },
   "dependencies": {
     "aws4fetch": "^1.0.20",
