@@ -15,8 +15,14 @@ export async function listSiteImages(): Promise<StoredSiteImage[]> {
   return rows.map((r) => ({ ...r, width: Number(r.width), height: Number(r.height), version: Number(r.version) })) as unknown as StoredSiteImage[];
 }
 
+/**
+ * Looked up in the database rather than checked against the built-in list, because admins can add
+ * their own images (site_images.custom) and those slots are named img-<hex>, not one of the names
+ * in site-images.ts. Checking the list first made every custom image 404 even though its row and
+ * its file both existed. The slot is only ever a bound lookup value, never part of a path, and the
+ * route that calls this has already checked its shape, so the row's own existence is the check.
+ */
 export async function readSiteImage(slot: string, size: "full" | "thumb"): Promise<{ mime: string; bytes: Buffer } | null> {
-  if (!isSiteImageSlot(slot)) return null;
   const q = await sql();
   const [row] = await q`SELECT mime, storage_key, thumb_key FROM site_images WHERE slot = ${slot}`;
   if (!row) return null;
