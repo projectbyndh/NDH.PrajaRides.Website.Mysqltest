@@ -27,10 +27,12 @@ export function productionEnvProblems(env: NodeJS.ProcessEnv = process.env): str
   // separately by every page that needs the database.
   const connection = connectionStringProblem(env);
   if (connection) problems.push(connection);
-  // TLS is on unless it is switched off: a MySQL connection that crosses the internet in the clear
-  // carries the admin's own data, so turning it off is a deliberate act and is reported.
-  if (env.MYSQL_SSL === "false" && env.ALLOW_INSECURE_DATABASE !== "true") {
-    problems.push("MYSQL_SSL=false: the database connection would not be encrypted (ALLOW_INSECURE_DATABASE=true overrides, not recommended — safe only when MySQL is on this same server)");
+  // TLS off is only worth reporting when the connection actually crosses a network. On localhost
+  // it never leaves the machine, which is the normal shared-hosting setup, so it is not a problem.
+  const dbHost = (env.MYSQL_HOST ?? "").trim().toLowerCase();
+  const localDb = ["localhost", "127.0.0.1", "::1"].includes(dbHost);
+  if (env.MYSQL_SSL === "false" && !localDb && env.ALLOW_INSECURE_DATABASE !== "true") {
+    problems.push("MYSQL_SSL=false while MYSQL_HOST is not localhost: the database connection would not be encrypted (ALLOW_INSECURE_DATABASE=true overrides, not recommended)");
   }
   return problems;
 }

@@ -209,6 +209,20 @@ export type ConnectionSettings = {
 };
 
 /**
+ * A host that never leaves this machine. TLS is pointless there and usually unavailable: a local
+ * MySQL is typically built without it, and asking for it fails with "Server does not support
+ * secure connection". So TLS defaults OFF for these and ON for everything else, where the
+ * connection really does cross a network. MYSQL_SSL=true forces it back on either way.
+ */
+const isLocal = (host: string) => ["localhost", "127.0.0.1", "::1", ""].includes(host.trim().toLowerCase());
+
+function sslDefault(host: string, env: NodeJS.ProcessEnv): boolean {
+  if (env.MYSQL_SSL === "true") return true;
+  if (env.MYSQL_SSL === "false") return false;
+  return !isLocal(host);
+}
+
+/**
  * Where to connect, from MYSQL_URL or the MYSQL_* variables. Hosting panels and the ".env"
  * importers that feed them often keep the quotes around a pasted value, so they are stripped: a
  * quoted string is not a URL, and the alternative is "Invalid URL" thrown from whichever page
@@ -223,16 +237,17 @@ export function connectionSettings(env: NodeJS.ProcessEnv = process.env): Connec
       user: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
       database: url.pathname.replace(/^\//, ""),
-      ssl: url.searchParams.get("ssl") !== "false",
+      ssl: url.searchParams.get("ssl") === "false" ? false : sslDefault(url.hostname, env),
     };
   }
+  const host = unquote(env.MYSQL_HOST ?? "");
   return {
-    host: unquote(env.MYSQL_HOST ?? ""),
+    host,
     port: Number(env.MYSQL_PORT || 3306),
     user: unquote(env.MYSQL_USER ?? ""),
     password: unquote(env.MYSQL_PASSWORD ?? ""),
     database: unquote(env.MYSQL_DATABASE ?? ""),
-    ssl: env.MYSQL_SSL !== "false",
+    ssl: sslDefault(host, env),
   };
 }
 

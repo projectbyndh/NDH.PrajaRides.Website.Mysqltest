@@ -26,6 +26,12 @@ export function readEnvFile(url) {
   }
 }
 
+// TLS is pointless and usually unavailable on a host that never leaves this machine; see the
+// matching note in src/lib/mysql.ts.
+const isLocal = (host) => ["localhost", "127.0.0.1", "::1", ""].includes(String(host).trim().toLowerCase());
+const sslDefault = (host, env) =>
+  env.MYSQL_SSL === "true" ? true : env.MYSQL_SSL === "false" ? false : !isLocal(host);
+
 export function settings(env = process.env) {
   if (env.MYSQL_URL) {
     const u = new URL(env.MYSQL_URL);
@@ -35,7 +41,7 @@ export function settings(env = process.env) {
       user: decodeURIComponent(u.username),
       password: decodeURIComponent(u.password),
       database: u.pathname.replace(/^\//, ""),
-      ssl: u.searchParams.get("ssl") !== "false",
+      ssl: u.searchParams.get("ssl") === "false" ? false : sslDefault(u.hostname, env),
     };
   }
   const missing = ["MYSQL_HOST", "MYSQL_DATABASE", "MYSQL_USER"].filter((k) => !env[k]);
@@ -48,7 +54,7 @@ export function settings(env = process.env) {
     user: env.MYSQL_USER,
     password: env.MYSQL_PASSWORD ?? "",
     database: env.MYSQL_DATABASE,
-    ssl: env.MYSQL_SSL !== "false",
+    ssl: sslDefault(env.MYSQL_HOST, env),
   };
 }
 
